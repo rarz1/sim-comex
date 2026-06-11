@@ -82,7 +82,7 @@ export function UserManager() {
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || 'Error de conexión')
-        return data.results as { email: string; success: boolean; error?: string }[]
+        return data.results as { email: string; success: boolean; error?: string; id?: string }[]
     }
 
     const handleSave = async () => {
@@ -97,10 +97,11 @@ export function UserManager() {
         }
 
         const role = formData.role || 'student';
-        const id = formData.id || generateDeterministicId(email, role);
         setSyncing(true);
 
         try {
+            let authId: string | undefined
+
             if (!formData.id && formData.password) {
                 const results = await syncToSupabase([{
                     email,
@@ -118,12 +119,16 @@ export function UserManager() {
                     toast.error(`Error en Auth: ${result.error}`)
                     setSyncing(false)
                     return
+                } else if (result.id) {
+                    authId = result.id
                 }
             }
 
-            const existing = await db.users.where('userId').equals(id).first();
+            const userId = authId || formData.id || generateDeterministicId(email, role)
+            const existing = await db.users.where('userId').equals(userId).first();
             if (existing?.id) {
                 await db.users.update(existing.id, {
+                    userId,
                     email,
                     name: formData.fullName,
                     role: role as UserRole,
@@ -132,7 +137,7 @@ export function UserManager() {
                 });
             } else {
                 await db.users.add({
-                    userId: id,
+                    userId,
                     email,
                     name: formData.fullName,
                     role: role as UserRole,
@@ -144,7 +149,7 @@ export function UserManager() {
 
             toast.success("Usuario guardado correctamente");
             setIsEditing(false);
-            setFormData({ role: 'student', documentType: 'CC', password: '' });
+            setFormData({ email: '', fullName: '', role: 'student', documentType: 'CC', documentNumber: '', password: '' });
         } catch (error: any) {
             console.error(error);
             toast.error(error.message || "Error al guardar usuario");
@@ -160,7 +165,7 @@ export function UserManager() {
             fullName: user.name,
             role: user.role,
             documentType: user.documentType || "CC",
-            documentNumber: user.documentNumber,
+            documentNumber: user.documentNumber || '',
             createdAt: user.createdAt,
             password: '',
         });
@@ -226,53 +231,55 @@ export function UserManager() {
             }))
 
             const results = await syncToSupabase(payload)
+            const authIds = new Map(results.filter(r => r.success && r.id).map(r => [r.email, r.id!]))
             const failed = results.filter(r => !r.success)
 
             if (failed.length > 0) {
                 const msgs = failed.map(f => `${f.email}: ${f.error}`).join('\n')
                 toast.warning(`${failed.length} usuario(s) no se crearon en Auth:\n${msgs}`)
             }
+
+            for (const item of bulkPreview) {
+                try {
+                    const userId = authIds.get(item.email) || item.generatedId
+                    const existing = await db.users.where('userId').equals(userId).first();
+                    if (existing) {
+                        await db.users.update(existing.id!, {
+                            userId,
+                            name: item.fullName,
+                            role: item.role,
+                            documentType: item.docType,
+                            documentNumber: item.docNum
+                        });
+                        updated++;
+                    } else {
+                        await db.users.add({
+                            userId,
+                            email: item.email,
+                            name: item.fullName,
+                            role: item.role,
+                            documentType: item.docType,
+                            documentNumber: item.docNum,
+                            createdAt: new Date().toISOString()
+                        });
+                        added++;
+                    }
+                } catch (e) {
+                    console.error(e);
+                    errors++;
+                }
+            }
+
+            toast.success(`Importación completada: ${added} nuevos, ${updated} actualizados. Auth sincronizado.`);
+            if (errors > 0) toast.warning(`${errors} errores locales.`);
+
+            setBulkText("");
+            setBulkPreview([]);
+            setBulkSyncing(false);
         } catch (error: any) {
             toast.error(`Error de conexión con Auth: ${error.message}`)
             setBulkSyncing(false)
-            return
         }
-
-        for (const item of bulkPreview) {
-            try {
-                const existing = await db.users.where('email').equals(item.email).first();
-                if (existing) {
-                    await db.users.update(existing.id!, {
-                        name: item.fullName,
-                        role: item.role,
-                        documentType: item.docType,
-                        documentNumber: item.docNum
-                    });
-                    updated++;
-                } else {
-                    await db.users.add({
-                        userId: item.generatedId,
-                        email: item.email,
-                        name: item.fullName,
-                        role: item.role,
-                        documentType: item.docType,
-                        documentNumber: item.docNum,
-                        createdAt: new Date().toISOString()
-                    });
-                    added++;
-                }
-            } catch (e) {
-                console.error(e);
-                errors++;
-            }
-        }
-
-        toast.success(`Importación completada: ${added} nuevos, ${updated} actualizados. Auth sincronizado.`);
-        if (errors > 0) toast.warning(`${errors} errores locales.`);
-
-        setBulkText("");
-        setBulkPreview([]);
-        setBulkSyncing(false);
     };
 
     return (
@@ -316,7 +323,7 @@ export function UserManager() {
                                 </Select>
                             </div>
                             <Button onClick={() => {
-                                setFormData({ role: 'student', documentType: 'CC', password: '' });
+                                setFormData({ email: '', fullName: '', role: 'student', documentType: 'CC', documentNumber: '', password: '' });
                                 setIsEditing(true);
                             }}>
                                 <Plus className="mr-2 h-4 w-4" /> Nuevo Usuario

@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     }
 
     const adminClient = createAdminClient()
-    const results: { email: string; success: boolean; error?: string }[] = []
+    const results: { email: string; success: boolean; error?: string; id?: string }[] = []
 
     for (const u of users) {
       const email = u.email?.trim().toLowerCase()
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      results.push({ email, success: true })
+      results.push({ email, success: true, id: newUser.user.id })
     }
 
     return NextResponse.json({ results })

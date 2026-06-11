@@ -15,6 +15,7 @@ export default function AdminDashboard() {
     const groups = useLiveQuery(() => db.groups.toArray());
     const modules = useLiveQuery(() => db.modules.toArray());
     const templates = useLiveQuery(() => db.templates.toArray());
+    const users = useLiveQuery(() => db.users.toArray());
     const { t } = useAppText();
     // Calculate Stats
     const now = new Date();
@@ -51,6 +52,12 @@ export default function AdminDashboard() {
 
     const totalActiveUsers = activeStudents + activeTeachers;
     const totalInactiveUsers = inactiveStudents + inactiveTeachers;
+
+    // User counts from actual user records
+    const totalUsers = users?.length || 0;
+    const totalStudents = users?.filter(u => u.role === 'student').length || 0;
+    const totalTeachers = users?.filter(u => u.role === 'teacher').length || 0;
+    const totalAdmins = users?.filter(u => u.role === 'admin').length || 0;
 
 
     // 3. Module Stats
@@ -91,27 +98,36 @@ export default function AdminDashboard() {
                 {/* USERS STATS */}
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">{t('admin.dashboard.card_users_title', 'Usuarios (Estudiantes + Docentes)')}</CardTitle>
+                        <CardTitle className="text-sm font-medium">{t('admin.dashboard.card_users_title', 'Usuarios')}</CardTitle>
                         <Users className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="flex items-baseline justify-between">
-                            <div className="text-2xl font-bold">{totalActiveUsers} <span className="text-sm font-normal text-muted-foreground">{t('admin.dashboard.card_users_active', 'Activos')}</span></div>
-                            <div className="text-sm text-muted-foreground flex items-center">
-                                <Archive className="w-3 h-3 mr-1" />
-                                {totalInactiveUsers} {t('admin.dashboard.card_users_inactive', 'Inactivos')}
+                        <div className="text-2xl font-bold">{totalUsers}</div>
+                        <div className="flex gap-4 text-xs text-muted-foreground mb-3">
+                            <span>{totalStudents} Estudiantes</span>
+                            <span>{totalTeachers} Docentes</span>
+                            <span>{totalAdmins} Admins</span>
+                        </div>
+                        <div className="border-t pt-3">
+                            <div className="flex items-baseline justify-between text-xs">
+                                <span className="text-muted-foreground">En grupos activos:</span>
+                                <span className="font-medium">{totalActiveUsers}</span>
+                            </div>
+                            <div className="flex items-baseline justify-between text-xs">
+                                <span className="text-muted-foreground">En grupos inactivos:</span>
+                                <span className="font-medium">{totalInactiveUsers}</span>
                             </div>
                         </div>
                         <div className="mt-4 space-y-2">
                             <div className="flex justify-between text-xs">
-                                <span className="text-muted-foreground">Estudiantes Activos</span>
+                                <span className="text-muted-foreground">Estudiantes en grupos activos</span>
                                 <span className="font-medium">{activeStudents}</span>
                             </div>
                             <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden">
                                 <div className="bg-primary h-full rounded-full" style={{ width: `${(activeStudents / (activeStudents + activeTeachers || 1)) * 100}%` }} />
                             </div>
                             <div className="flex justify-between text-xs pt-1">
-                                <span className="text-muted-foreground">Docentes Activos</span>
+                                <span className="text-muted-foreground">Docentes en grupos activos</span>
                                 <span className="font-medium">{activeTeachers}</span>
                             </div>
                         </div>

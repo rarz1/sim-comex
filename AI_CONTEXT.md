@@ -204,6 +204,14 @@ SIM 1/
   - Modificado `UserManager.tsx`: agregado campo de contraseña, sincronización con Auth al guardar
   - Carga masiva: agrega campo "Contraseña por defecto", sincroniza todos los usuarios con Auth
   - Agregada `SUPABASE_SERVICE_ROLE_KEY` a env vars (local + Vercel)
+- **Fix API route usaba cliente browser en servidor**: Creado `lib/supabase/server.ts` con `createRouteHandlerClient()` que lee cookies de la request. Actualizado `route.ts` para usarlo.
+- **Fix email validation**: Agregado `trim().toLowerCase()` al email tanto en frontend como backend para evitar errores de formato en Supabase Auth.
+- **Alineación completa campos entre app, IndexedDB y Supabase**:
+  - Agregada columna `document_type` a tabla `profiles` en Supabase (SQL ejecutado)
+  - Actualizado `route.ts` para upsert `document_type` y `document_number`
+  - Actualizado `authService.ts` login sync para incluir todos los campos
+  - Guardado completo de `documentType`/`documentNumber` en IndexedDB al login
+- Errores: "Unable to validate email address: invalid format" por falta de trim/lowercase. "No autorizado" en API route por usar browser client en servidor (cookies no leídas).
 
 ### Sesión 12 - Junio 2026
 - **Ajustes finales landing page** (múltiples iteraciones con feedback del usuario):
