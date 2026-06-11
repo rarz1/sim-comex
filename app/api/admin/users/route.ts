@@ -65,6 +65,7 @@ export async function POST(request: NextRequest) {
         email,
         name: fullName,
         role,
+        document_type: documentType || null,
         document_number: documentNumber || null,
       }, { onConflict: 'id' })
 

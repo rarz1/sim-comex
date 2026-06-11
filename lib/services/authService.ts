@@ -282,7 +282,9 @@ export const authService = {
                 id: userProfile.id,
                 email: userProfile.email,
                 name: userProfile.fullName,
-                role: userProfile.role
+                role: userProfile.role,
+                document_type: user.user_metadata?.document_type || null,
+                document_number: user.user_metadata?.document_number || null,
             });
         } catch (syncError) {
             console.error('Failed to sync profile to Supabase:', syncError);
@@ -296,14 +298,18 @@ export const authService = {
                 await db.users.update(existing.id, {
                     email: user.email!,
                     name: userProfile.fullName,
-                    role: userProfile.role
+                    role: userProfile.role,
+                    documentType: userProfile.documentType,
+                    documentNumber: userProfile.documentNumber,
                 });
             } else {
                 await db.users.add({
                     userId: user.id,
                     email: user.email!,
                     name: userProfile.fullName,
-                    role: userProfile.role
+                    role: userProfile.role,
+                    documentType: userProfile.documentType,
+                    documentNumber: userProfile.documentNumber,
                 });
             }
         } catch (error) {
