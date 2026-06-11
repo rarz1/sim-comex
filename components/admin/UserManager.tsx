@@ -86,7 +86,8 @@ export function UserManager() {
     }
 
     const handleSave = async () => {
-        if (!formData.email || !formData.fullName) {
+        const email = (formData.email || '').trim().toLowerCase()
+        if (!email || !formData.fullName) {
             toast.error("Nombre y Email son obligatorios");
             return;
         }
@@ -96,13 +97,13 @@ export function UserManager() {
         }
 
         const role = formData.role || 'student';
-        const id = formData.id || generateDeterministicId(formData.email, role);
+        const id = formData.id || generateDeterministicId(email, role);
         setSyncing(true);
 
         try {
             if (!formData.id && formData.password) {
                 const results = await syncToSupabase([{
-                    email: formData.email,
+                    email,
                     password: formData.password,
                     fullName: formData.fullName,
                     role,
@@ -112,7 +113,7 @@ export function UserManager() {
 
                 const result = results[0]
                 if (!result.success && result.error?.includes('ya existe')) {
-                    toast.warning(`${formData.email}: ${result.error}. Se guardará solo localmente.`)
+                    toast.warning(`${email}: ${result.error}. Se guardará solo localmente.`)
                 } else if (!result.success) {
                     toast.error(`Error en Auth: ${result.error}`)
                     setSyncing(false)
@@ -123,7 +124,7 @@ export function UserManager() {
             const existing = await db.users.where('userId').equals(id).first();
             if (existing?.id) {
                 await db.users.update(existing.id, {
-                    email: formData.email,
+                    email,
                     name: formData.fullName,
                     role: role as UserRole,
                     documentType: formData.documentType as any,
@@ -132,7 +133,7 @@ export function UserManager() {
             } else {
                 await db.users.add({
                     userId: id,
-                    email: formData.email,
+                    email,
                     name: formData.fullName,
                     role: role as UserRole,
                     documentType: formData.documentType as any,
@@ -185,7 +186,7 @@ export function UserManager() {
             if (cols.length < 2) return null;
 
             const fullName = cols[0]?.trim();
-            const email = cols[1]?.trim();
+            const email = cols[1]?.trim().toLowerCase();
             const docType = cols[2]?.trim().toUpperCase() || "CC";
             const docNum = cols[3]?.trim() || "";
             const rawRole = cols[4]?.trim().toLowerCase() || "";

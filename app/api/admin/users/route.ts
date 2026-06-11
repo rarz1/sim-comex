@@ -1,10 +1,10 @@
-import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/client'
+import { NextRequest, NextResponse } from 'next/server'
+import { createRouteHandlerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const supabase = createClient()
+    const { supabase } = createRouteHandlerClient(request)
     const { data: { session }, error: sessionError } = await supabase.auth.getSession()
 
     if (sessionError || !session) {
@@ -31,10 +31,11 @@ export async function POST(request: Request) {
     const results: { email: string; success: boolean; error?: string }[] = []
 
     for (const u of users) {
-      const { email, password, fullName, role, documentType, documentNumber } = u
+      const email = u.email?.trim().toLowerCase()
+      const { password, fullName, role, documentType, documentNumber } = u
 
       if (!email || !password) {
-        results.push({ email: email || 'unknown', success: false, error: 'Email y password obligatorios' })
+        results.push({ email: u.email || 'unknown', success: false, error: 'Email y password obligatorios' })
         continue
       }
 
@@ -64,7 +65,6 @@ export async function POST(request: Request) {
         email,
         name: fullName,
         role,
-        document_type: documentType || null,
         document_number: documentNumber || null,
       }, { onConflict: 'id' })
 
