@@ -189,7 +189,23 @@ SIM 1/
 - Activado de manera global el modo `caveman` en las reglas de sistema.
 - Instalada la skill `ui-ux-pro-max` (herramienta de diseño e interfaz con soporte nativo para Antigravity) de forma global.
 
-### Sesión 12 - Junio 2026 (sesión actual)
+### Sesión 13 - Junio 2026 (sesión actual)
+- **Despliegue en Vercel + GitHub**:
+  - Inicializado repositorio Git y subido a GitHub (rarz1/sim-comex)
+  - Instalado GitHub CLI (gh) para autenticación
+  - Configurado .gitignore para excluir .env* y napkin embebido
+  - Desplegado en Vercel (plan Hobby) con variables de entorno de Supabase real
+  - App accesible públicamente para pruebas externas
+- **Fix login en producción**: El admin no existía en Supabase Auth del proyecto cloud. Creado usuario admin@test.com manualmente desde Authentication > Users con password 123456. Asignado rol 'admin' vía UPDATE en tabla profiles via SQL Editor.
+- Errores: La tabla es `profiles` (plural), no `profile`. Warning "destructive operations" es normal, solo un safety check de Supabase.
+- **Nueva funcionalidad: creación de usuarios desde el panel admin con sync a Supabase Auth**:
+  - Creado `lib/supabase/admin.ts`: cliente Supabase con service_role key para operaciones admin
+  - Creado `app/api/admin/users/route.ts`: API route POST que crea usuarios en Auth + profiles
+  - Modificado `UserManager.tsx`: agregado campo de contraseña, sincronización con Auth al guardar
+  - Carga masiva: agrega campo "Contraseña por defecto", sincroniza todos los usuarios con Auth
+  - Agregada `SUPABASE_SERVICE_ROLE_KEY` a env vars (local + Vercel)
+
+### Sesión 12 - Junio 2026
 - **Ajustes finales landing page** (múltiples iteraciones con feedback del usuario):
   - Hero: texto reducido de tamaño (`3xl/4xl/5xl`), `whitespace-nowrap` por línea, alineado a la izquierda.
   - Hero cambiado a 4 líneas: "APRENDIZAJE BASADO / EN SIMULACION PARA LA / GESTION DOCUMENTAL / DEL COMERCIO EXTERIOR".
