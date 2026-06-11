@@ -7,7 +7,7 @@ import { db } from "@/lib/db/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { FileText, Users, BookOpen, Clock, Activity, Archive } from "lucide-react";
+import { FileText, Users, BookOpen, Clock, Activity, Archive, Database, List } from "lucide-react";
 import { useAppText } from "@/hooks/useAppText";
 
 export default function AdminDashboard() {
@@ -16,6 +16,7 @@ export default function AdminDashboard() {
     const modules = useLiveQuery(() => db.modules.toArray());
     const templates = useLiveQuery(() => db.templates.toArray());
     const users = useLiveQuery(() => db.users.toArray());
+    const catalogs = useLiveQuery(() => db.catalogs.toArray());
     const { t } = useAppText();
     // Calculate Stats
     const now = new Date();
@@ -67,7 +68,7 @@ export default function AdminDashboard() {
     const activeModules = activeModuleIds.size;
 
 
-    // 4. Document Stats
+    // 5. Document Stats
     // Active Docs: Templates belonging to Active Modules AND Status is Published
     const activeDocs = templates?.filter(t =>
         t.status === 'published' && activeModuleIds.has(t.moduleId)
@@ -75,6 +76,12 @@ export default function AdminDashboard() {
 
     const draftDocs = templates?.filter(t => t.status !== 'published').length || 0;
     const totalDocs = templates?.length || 0;
+
+    // 6. Catalog Stats
+    const totalCatalogs = catalogs?.length || 0;
+    const totalCatalogItems = catalogs?.reduce((acc, c) => acc + (c.items?.length || 0), 0) || 0;
+    const simpleCatalogs = catalogs?.filter(c => c.type === 'simple').length || 0;
+    const twoColumnCatalogs = catalogs?.filter(c => c.type === 'two_column').length || 0;
 
 
     return (
@@ -222,6 +229,38 @@ export default function AdminDashboard() {
                         </div>
                     </CardContent>
                 </Card>
+
+                {/* CATALOGS STATS */}
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Catálogos / Listas</CardTitle>
+                        <Database className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{totalCatalogs}</div>
+                        <p className="text-xs text-muted-foreground mb-3">Catálogos disponibles</p>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="flex flex-col border rounded p-2 bg-muted/20">
+                                <span className="text-[10px] text-muted-foreground uppercase font-semibold">Simples</span>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <List className="w-4 h-4 text-blue-500" />
+                                    <span className="text-lg font-bold">{simpleCatalogs}</span>
+                                </div>
+                            </div>
+                            <div className="flex flex-col border rounded p-2 bg-muted/20">
+                                <span className="text-[10px] text-muted-foreground uppercase font-semibold">Dos Columnas</span>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <Database className="w-4 h-4 text-purple-500" />
+                                    <span className="text-lg font-bold">{twoColumnCatalogs}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-3">
+                            {totalCatalogItems} ítems en total
+                        </p>
+                    </CardContent>
+                </Card>
+
             </div>
 
             {/* QUICK ACTIONS / ALERTS could go here */}
