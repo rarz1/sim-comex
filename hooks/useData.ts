@@ -80,7 +80,8 @@ export function useDeleteModule() {
 }
 
 export function useTemplates(filters?: Record<string, string>) {
-  return useTable<Template>('templates', filters);
+  const mergedFilters = { select: 'id,title,status,schema,created_at,updated_at', ...filters };
+  return useTable<Template>('templates', mergedFilters);
 }
 
 export function useTemplate(templateId?: string) {

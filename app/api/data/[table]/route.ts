@@ -8,9 +8,9 @@ export async function GET(
   const { table } = await params;
   const supabase = createAdminClient();
   const searchParams = Object.fromEntries(request.nextUrl.searchParams);
-  const { id, ...filters } = searchParams;
+  const { id, select, ...filters } = searchParams;
 
-  let query: any = supabase.from(table).select('*');
+  let query: any = supabase.from(table).select(select || '*');
 
   if (id) {
     query = query.eq('id', id).single();

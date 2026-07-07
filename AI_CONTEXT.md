@@ -556,6 +556,18 @@ SIM 1/
 - Errores nuevos: 0.
 - Pendientes: Migrar push ops a API routes proxy (pre-existing).
 
+### Sesión 30 - Julio 2026
+- **Fix Vercel no reflejaba datos migrados**: Vercel apuntaba a proyecto Supabase distinto al de `.env.local`.
+  - Actualizadas Environment Variables en Vercel Dashboard con las del `.env.local`.
+  - Primer redeploy con build cache no funcionó (URLs viejas en bundle).
+  - Segundo redeploy sin build cache tampoco (código en Vercel era viejo).
+  - **Causa raíz**: Commits de Sesiones 22-29 nunca se habían subido a GitHub.
+  - `git push` de 77 archivos (migración Supabase-first + API routes).
+  - API routes ahora funcionan: `GET /api/data/profiles` → 200.
+- **Fix `RangeError: Invalid time value`**: `template.updatedAt` nullable en builder page. Agregado guard.
+- Errores: Vercel tenía código viejo. `new Date(null)` crasheaba.
+- Pendientes: N/A.
+
 ---
 
 ## Notas importantes para nuevas IAs
