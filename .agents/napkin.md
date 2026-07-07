@@ -26,6 +26,12 @@
 5. **[2026-05-24] Validación cruzada de Tag ID entre documentos**
    Do instead: Verificar duplicados local + contra otros documentos con `tagExistsInOtherDocuments()`.
 
+## Browser bloquea Supabase (CRITICAL)
+1. **[2026-06-27] NO hacer fetch a supabase.co desde browser**
+   Do instead: Browser/Windows bloquea requests directos a Supabase. Siempre usar API routes de Next.js como proxy server-side. Login, logout, sync pull ya migrados.
+2. **[2026-06-27] `NextResponse.next()` no funciona en Route Handlers**
+   Do instead: En `app/api/*`, no usar `createRouteHandlerClient` (usa `NextResponse.next()` internamente). Usar `createServerClient` manual con `setAll: () => {}` y setear cookies manualmente.
+
 ## Shell & Command Reliability
 1. **[2026-05-24] Preferir Read/Write/Edit sobre PowerShell para archivos**
    Do instead: Usar herramientas nativas para file ops. PowerShell solo para npm/git/scripts.

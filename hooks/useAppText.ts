@@ -1,20 +1,12 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/db";
+import { useAppTexts } from "@/hooks/useData";
 import { defaultTexts } from "@/lib/appTexts";
 
-/**
- * Hook to retrieve application texts with admin override functionality.
- * Use it like: const { t } = useAppText();
- * In JSX: {t('admin.dashboard.title', 'Panel de Administrador')}
- */
 export function useAppText() {
-    // Fetch all text overrides from Dexie
-    const overrides = useLiveQuery(() => db.appTexts.toArray());
+    const { data: overrides } = useAppTexts();
 
-    // Map overrides for quick lookup - Memoized to prevent re-mapping on every render
     const overrideMap = useMemo(() => {
         const map = new Map<string, string>();
         if (overrides) {

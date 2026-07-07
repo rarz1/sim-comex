@@ -4,14 +4,12 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, Trash2, LayoutGrid, List, Zap, X, Edit2, Copy, Save, Check, Cloud, Loader2 } from "lucide-react";
+import { Plus, Trash2, LayoutGrid, List, Zap, X, Edit2, Copy, Save, Check } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/db";
+import { useCatalogs, useCreateOrUpdateCatalog, useDeleteCatalog } from "@/hooks/useData";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { dbService } from "@/lib/services/dbService";
 
 interface CatalogItem {
     id: string;
@@ -21,10 +19,19 @@ interface CatalogItem {
 }
 
 export function CatalogManager() {
-    const catalogs = useLiveQuery(() => db.catalogs.toArray());
+    const { data: catalogs } = useCatalogs();
+    const createOrUpdateCatalog = useCreateOrUpdateCatalog();
+    const deleteCatalogMutation = useDeleteCatalog();
     const [isCreating, setIsCreating] = useState(false);
-    const [isSyncing, setIsSyncing] = useState(false);
     const [newName, setNewName] = useState("");
+    const [newType, setNewType] = useState<'simple' | 'two_column' | 'three_column'>('two_column');
+    const [localEdits, setLocalEdits] = useState<Record<string, string>>({});
+
+    const CATALOG_TYPES = [
+        { value: 'simple' as const, label: 'Lista Simple', desc: 'Una columna: etiqueta' },
+        { value: 'two_column' as const, label: 'Dos Columnas', desc: 'Etiqueta + Valor' },
+        { value: 'three_column' as const, label: 'Tres Columnas', desc: 'Etiqueta + Valor + Secundario' },
+    ];
     const [bulkText, setBulkText] = useState("");
     const [showBulkId, setShowBulkId] = useState<string | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -32,21 +39,20 @@ export function CatalogManager() {
 
     const addCatalog = async () => {
         if (!newName) return;
-        await db.catalogs.add({
+        await createOrUpdateCatalog.mutateAsync({
             id: crypto.randomUUID(),
             name: newName,
-            type: 'two_column',
+            type: newType,
             items: []
         });
         setNewName("");
+        setNewType('two_column');
         setIsCreating(false);
-        handleCloudSync();
     };
 
     const deleteCatalog = async (id: string) => {
         if (!confirm("¿Está seguro de eliminar este catálogo y todos sus ítems? Esta acción no se puede deshacer.")) return;
-        await db.catalogs.delete(id);
-        handleCloudSync();
+        deleteCatalogMutation.mutate(id);
     };
 
     const duplicateCatalog = async (catalog: any) => {
@@ -56,19 +62,19 @@ export function CatalogManager() {
             name: `${catalog.name} (Copia)`,
             items: catalog.items.map((item: any) => ({ ...item, id: crypto.randomUUID() }))
         };
-        await db.catalogs.add(newCatalog);
-        handleCloudSync();
+        await createOrUpdateCatalog.mutateAsync(newCatalog);
     };
 
     const saveCatalogName = async (id: string) => {
         if (!editingName.trim()) return;
-        await db.catalogs.update(id, { name: editingName });
+        const cat = catalogs?.find(c => c.id === id);
+        if (!cat) return;
+        await createOrUpdateCatalog.mutateAsync({ ...cat, name: editingName });
         setEditingId(null);
-        handleCloudSync();
     };
 
     const addItem = async (catalogId: string) => {
-        const cat = await db.catalogs.get(catalogId);
+        const cat = catalogs?.find(c => c.id === catalogId);
         if (!cat) return;
 
         const newItem: CatalogItem = {
@@ -77,66 +83,80 @@ export function CatalogManager() {
             label: ""
         };
 
-        await db.catalogs.update(catalogId, {
+        await createOrUpdateCatalog.mutateAsync({
+            ...cat,
             items: [...cat.items, newItem]
         });
-        handleCloudSync();
     };
 
-    const updateItem = async (catalogId: string, itemId: string, field: keyof CatalogItem, val: string) => {
-        const cat = await db.catalogs.get(catalogId);
+    const updateItem = (catalogId: string, itemId: string, field: keyof CatalogItem, val: string) => {
+        const key = `${catalogId}:${itemId}:${field}`;
+        setLocalEdits(prev => ({ ...prev, [key]: val }));
+    };
+
+    const getItemValue = (catalogId: string, itemId: string, field: string, defaultValue: string) => {
+        const key = `${catalogId}:${itemId}:${field}`;
+        return localEdits[key] ?? defaultValue;
+    };
+
+    const saveCatalogOnBlur = async (catalogId: string) => {
+        const cat = catalogs?.find(c => c.id === catalogId);
         if (!cat) return;
 
-        await db.catalogs.update(catalogId, {
-            items: cat.items.map((i: any) => i.id === itemId ? { ...i, [field]: val } : i)
+        const updatedItems = cat.items.map((item: any) => {
+            const newItem = { ...item };
+            ['label', 'value', 'value2'].forEach(f => {
+                const key = `${catalogId}:${item.id}:${f}`;
+                if (localEdits[key] !== undefined) {
+                    (newItem as any)[f] = localEdits[key];
+                }
+            });
+            return newItem;
+        });
+
+        await createOrUpdateCatalog.mutateAsync({ ...cat, items: updatedItems });
+
+        setLocalEdits(prev => {
+            const next = { ...prev };
+            Object.keys(next).forEach(k => { if (k.startsWith(`${catalogId}:`)) delete next[k]; });
+            return next;
         });
     };
 
     const deleteItem = async (catalogId: string, itemId: string) => {
-        const cat = await db.catalogs.get(catalogId);
+        const cat = catalogs?.find(c => c.id === catalogId);
         if (!cat) return;
 
-        await db.catalogs.update(catalogId, {
+        await createOrUpdateCatalog.mutateAsync({
+            ...cat,
             items: cat.items.filter((i: any) => i.id !== itemId)
         });
-        handleCloudSync();
     };
 
     const handleBulkAdd = async (catalogId: string) => {
-        const cat = await db.catalogs.get(catalogId);
+        const cat = catalogs?.find(c => c.id === catalogId);
         if (!cat || !bulkText) return;
 
-        // Formato: Dato1;Dato2, Dato3;Dato4 (Etiqueta;Valor)
-        const pairs = bulkText.split(',').map(p => p.trim()).filter(p => p);
-        const newItems: CatalogItem[] = pairs.map(p => {
+        const rows = bulkText.split(',').map(p => p.trim()).filter(p => p);
+        const newItems: CatalogItem[] = rows.map(p => {
             const parts = p.split(';').map(s => s.trim());
             const item: CatalogItem = {
                 id: crypto.randomUUID(),
                 label: parts[0],
                 value: parts[1] || parts[0]
             };
+            if (cat.type === 'three_column' && parts[2]) {
+                item.value2 = parts[2];
+            }
             return item;
         });
 
-        await db.catalogs.update(catalogId, {
+        await createOrUpdateCatalog.mutateAsync({
+            ...cat,
             items: [...cat.items, ...newItems]
         });
         setBulkText("");
         setShowBulkId(null);
-        handleCloudSync();
-    };
-
-    const handleCloudSync = async () => {
-        setIsSyncing(true);
-        try {
-            await dbService.pushCatalogs();
-            toast.success("Catálogos sincronizados con la nube");
-        } catch (error) {
-            console.error("Cloud sync failed:", error);
-            toast.error("Error al sincronizar con la nube");
-        } finally {
-            setIsSyncing(false);
-        }
     };
 
     return (
@@ -147,16 +167,6 @@ export function CatalogManager() {
                     <p className="text-sm text-muted-foreground">Gestiona las listas desplegables reutilizables.</p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={handleCloudSync} 
-                        disabled={isSyncing}
-                        className="border-primary/30 text-primary hover:bg-primary/5"
-                    >
-                        {isSyncing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Cloud className="w-4 h-4 mr-2" />}
-                        Sincronizar Nube
-                    </Button>
                     {!isCreating ? (
                         <Button onClick={() => setIsCreating(true)} size="sm">
                             <Plus className="w-4 h-4 mr-2" /> Nuevo Catálogo
@@ -167,8 +177,21 @@ export function CatalogManager() {
                                 value={newName}
                                 onChange={e => setNewName(e.target.value)}
                                 placeholder="Nombre del catálogo"
-                                className="h-8 text-xs w-48"
+                                className="h-8 text-xs w-44"
+                                onKeyDown={e => e.key === 'Enter' && addCatalog()}
                             />
+                            <Select value={newType} onValueChange={(v: any) => setNewType(v)}>
+                                <SelectTrigger className="h-8 w-40 text-xs">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {CATALOG_TYPES.map(t => (
+                                        <SelectItem key={t.value} value={t.value} className="text-xs">
+                                            {t.label}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                             <Button onClick={addCatalog} size="sm" variant="default" className="h-8">Crear</Button>
                             <Button onClick={() => setIsCreating(false)} size="sm" variant="ghost" className="h-8 text-xs">Cancelar</Button>
                         </div>
@@ -177,7 +200,7 @@ export function CatalogManager() {
             </CardHeader>
             <CardContent className="px-0">
                 <Accordion type="single" collapsible className="w-full space-y-2">
-                    {catalogs?.map(cat => (
+                    {[...(catalogs || [])].sort((a, b) => a.name.localeCompare(b.name)).map(cat => (
                         <AccordionItem value={cat.id} key={cat.id} className="border rounded-xl px-4 bg-muted/20 group">
                             <div className="flex items-center justify-between gap-4">
                                 {editingId === cat.id ? (
@@ -199,10 +222,13 @@ export function CatalogManager() {
                                 ) : (
                                     <AccordionTrigger className="hover:no-underline flex-1 py-4">
                                         <div className="flex items-center gap-2">
-                                            {cat.type === 'two_column' ? <LayoutGrid className="w-4 h-4 text-primary" /> : <List className="w-4 h-4 text-primary" />}
+                                            {cat.type === 'simple' ? <List className="w-4 h-4 text-primary" /> : <LayoutGrid className="w-4 h-4 text-primary" />}
                                             <span className="font-bold text-left">{cat.name}</span>
                                             <span className="text-xs text-muted-foreground px-2 py-0.5 bg-background rounded-full border">
                                                 {cat.items.length} ítems
+                                            </span>
+                                            <span className="text-[10px] text-muted-foreground/60 px-2 py-0.5 bg-muted rounded-full border">
+                                                {CATALOG_TYPES.find(t => t.value === cat.type)?.label || cat.type}
                                             </span>
                                         </div>
                                     </AccordionTrigger>
@@ -247,38 +273,113 @@ export function CatalogManager() {
                             </div>
                             <AccordionContent className="pt-2 pb-4">
                                 <div className="space-y-3">
-                                    <div className="grid grid-cols-12 gap-2 font-black text-[10px] text-muted-foreground uppercase tracking-wider mb-1 px-1">
-                                        <div className="col-span-6">Columna 1: Etiqueta Visible</div>
-                                        <div className="col-span-5">Columna 2: Valor Principal</div>
-                                        <div className="col-span-1"></div>
-                                    </div>
+                                    {/* Column headers based on type */}
+                                    {cat.type === 'simple' && (
+                                        <div className="grid grid-cols-12 gap-2 font-black text-[10px] text-muted-foreground uppercase tracking-wider mb-1 px-1">
+                                            <div className="col-span-11">Etiqueta Visible</div>
+                                            <div className="col-span-1"></div>
+                                        </div>
+                                    )}
+                                    {cat.type === 'two_column' && (
+                                        <div className="grid grid-cols-12 gap-2 font-black text-[10px] text-muted-foreground uppercase tracking-wider mb-1 px-1">
+                                            <div className="col-span-6">Columna 1: Etiqueta Visible</div>
+                                            <div className="col-span-5">Columna 2: Valor Principal</div>
+                                            <div className="col-span-1"></div>
+                                        </div>
+                                    )}
+                                    {cat.type === 'three_column' && (
+                                        <div className="grid grid-cols-12 gap-2 font-black text-[10px] text-muted-foreground uppercase tracking-wider mb-1 px-1">
+                                            <div className="col-span-4">Columna 1: Etiqueta Visible</div>
+                                            <div className="col-span-4">Columna 2: Valor Principal</div>
+                                            <div className="col-span-3">Columna 3: Valor Secundario</div>
+                                            <div className="col-span-1"></div>
+                                        </div>
+                                    )}
 
                                     <div className="space-y-2">
                                         {cat.items.map((item: any) => (
                                             <div key={item.id} className="grid grid-cols-12 gap-2 items-center group">
-                                                <div className="col-span-6">
-                                                    <Input
-                                                        value={item.label}
-                                                        onChange={e => updateItem(cat.id, item.id, 'label', e.target.value)}
-                                                        onBlur={handleCloudSync}
-                                                        placeholder="Etiqueta visible para el usuario"
-                                                        className="h-9 text-xs bg-background font-medium"
-                                                    />
-                                                </div>
-                                                <div className="col-span-5">
-                                                    <Input
-                                                        value={item.value}
-                                                        onChange={e => updateItem(cat.id, item.id, 'value', e.target.value)}
-                                                        onBlur={handleCloudSync}
-                                                        placeholder="Valor principal"
-                                                        className="h-9 text-xs bg-background"
-                                                     />
-                                                </div>
-                                                <div className="col-span-1 flex justify-end">
-                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => deleteItem(cat.id, item.id)}>
-                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                    </Button>
-                                                </div>
+                                                {cat.type === 'simple' && (
+                                                    <>
+                                                        <div className="col-span-11">
+                                                            <Input
+                                                                value={getItemValue(cat.id, item.id, 'label', item.label)}
+                                                                onChange={e => updateItem(cat.id, item.id, 'label', e.target.value)}
+                                                                onBlur={() => saveCatalogOnBlur(cat.id)}
+                                                                placeholder="Etiqueta"
+                                                                className="h-9 text-xs bg-background font-medium"
+                                                            />
+                                                        </div>
+                                                        <div className="col-span-1 flex justify-end">
+                                                            <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => deleteItem(cat.id, item.id)}>
+                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                            </Button>
+                                                        </div>
+                                                    </>
+                                                )}
+                                                {cat.type === 'two_column' && (
+                                                    <>
+                                                        <div className="col-span-6">
+                                                            <Input
+                                                                value={getItemValue(cat.id, item.id, 'label', item.label)}
+                                                                onChange={e => updateItem(cat.id, item.id, 'label', e.target.value)}
+                                                                onBlur={() => saveCatalogOnBlur(cat.id)}
+                                                                placeholder="Etiqueta visible"
+                                                                className="h-9 text-xs bg-background font-medium"
+                                                            />
+                                                        </div>
+                                                        <div className="col-span-5">
+                                                            <Input
+                                                                value={getItemValue(cat.id, item.id, 'value', item.value)}
+                                                                onChange={e => updateItem(cat.id, item.id, 'value', e.target.value)}
+                                                                onBlur={() => saveCatalogOnBlur(cat.id)}
+                                                                placeholder="Valor principal"
+                                                                className="h-9 text-xs bg-background"
+                                                            />
+                                                        </div>
+                                                        <div className="col-span-1 flex justify-end">
+                                                            <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => deleteItem(cat.id, item.id)}>
+                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                            </Button>
+                                                        </div>
+                                                    </>
+                                                )}
+                                                {cat.type === 'three_column' && (
+                                                    <>
+                                                        <div className="col-span-4">
+                                                            <Input
+                                                                value={getItemValue(cat.id, item.id, 'label', item.label)}
+                                                                onChange={e => updateItem(cat.id, item.id, 'label', e.target.value)}
+                                                                onBlur={() => saveCatalogOnBlur(cat.id)}
+                                                                placeholder="Etiqueta visible"
+                                                                className="h-9 text-xs bg-background font-medium"
+                                                            />
+                                                        </div>
+                                                        <div className="col-span-4">
+                                                            <Input
+                                                                value={getItemValue(cat.id, item.id, 'value', item.value)}
+                                                                onChange={e => updateItem(cat.id, item.id, 'value', e.target.value)}
+                                                                onBlur={() => saveCatalogOnBlur(cat.id)}
+                                                                placeholder="Valor principal"
+                                                                className="h-9 text-xs bg-background"
+                                                            />
+                                                        </div>
+                                                        <div className="col-span-3">
+                                                            <Input
+                                                                value={getItemValue(cat.id, item.id, 'value2', item.value2 || '')}
+                                                                onChange={e => updateItem(cat.id, item.id, 'value2', e.target.value)}
+                                                                onBlur={() => saveCatalogOnBlur(cat.id)}
+                                                                placeholder="Valor secundario"
+                                                                className="h-9 text-xs bg-background"
+                                                            />
+                                                        </div>
+                                                        <div className="col-span-1 flex justify-end">
+                                                            <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => deleteItem(cat.id, item.id)}>
+                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                            </Button>
+                                                        </div>
+                                                    </>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
@@ -311,14 +412,21 @@ export function CatalogManager() {
                                             <div className="flex justify-between items-center">
                                                 <div className="space-y-1">
                                                     <h4 className="text-xs font-black uppercase text-primary">Carga Masiva de Datos</h4>
-                                                    <p className="text-[10px] text-muted-foreground">Formato: <b>Etiqueta;Valor2, Etiqueta;Valor2...</b></p>
+                                                    <p className="text-[10px] text-muted-foreground">
+                                                        Formato: <b>
+                                                            {cat.type === 'three_column'
+                                                                ? 'Etiqueta;Valor;Valor2, Etiqueta;Valor;Valor2...'
+                                                                : 'Etiqueta;Valor, Etiqueta;Valor...'
+                                                            }
+                                                        </b>
+                                                    </p>
                                                 </div>
                                                 <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowBulkId(null)}>
                                                     <X className="w-3 h-3" />
                                                 </Button>
                                             </div>
                                             <Textarea
-                                                placeholder="Ej: Cartagena; CTG, Barranquilla; BAQ"
+                                                placeholder={cat.type === 'three_column' ? 'Ej: Cartagena;CTG;Caribe, Barranquilla;BAQ;Caribe' : 'Ej: Cartagena;CTG, Barranquilla;BAQ'}
                                                 value={bulkText}
                                                 onChange={e => setBulkText(e.target.value)}
                                                 className="min-h-[100px] text-xs bg-background"

@@ -1,9 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/db";
+import { useGroup, useModule, useTemplates, useDrafts, useUsers, useExercises, useExerciseAssignments } from "@/hooks/useData";
 import { cn, calculateDocumentProgress } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,55 +32,37 @@ export default function StudentGroupDetailPage({ params }: { params: Promise<{ i
     const { user } = useAuth();
 
     // 1. Fetch live data
-    const group = useLiveQuery(() => db.groups.get(groupId));
-    const currentModule = useLiveQuery(() => group?.moduleId ? db.modules.get(group.moduleId) : undefined, [group]);
-    const templates = useLiveQuery(async () => {
-        if (!currentModule?.id) return [];
+    const { data: group } = useGroup(groupId);
+    const { data: currentModule } = useModule(group?.moduleId);
+    const { data: allTemplates = [] } = useTemplates();
+    const { data: drafts } = useDrafts({ userId: user?.id || '', groupId });
+    const { data: allUsers } = useUsers() as any;
 
-        // 1. Fetch by Module ID (Ownership)
-        const byModuleId = await db.templates.where({ moduleId: currentModule.id }).toArray();
-
-        // 2. Fetch by Attachment (Reference)
-        const attachedIds: string[] = [];
-        currentModule.sections?.forEach(s => {
-            s.attachedDocumentIds?.forEach(id => attachedIds.push(id));
-        });
-
-        const byAttachment = attachedIds.length > 0
-            ? await db.templates.where('id').anyOf(attachedIds).toArray()
-            : [];
-
-        // 3. Merge and Deduplicate
-        const uniqueTemplates = new Map();
-        byModuleId.forEach(t => uniqueTemplates.set(t.id, t));
-        byAttachment.forEach(t => uniqueTemplates.set(t.id, t));
-
-        return Array.from(uniqueTemplates.values());
-    }, [currentModule]);
-    const drafts = useLiveQuery(() => user ? db.drafts.where({ userId: user.id, groupId: groupId }).toArray() : [], [user, groupId]);
-    const allUsers = useLiveQuery(() => db.users.toArray());
+    const templates = useMemo(() => {
+        if (!currentModule?.id || !allTemplates.length) return [];
+        const byModuleId = allTemplates.filter(t => t.moduleId === currentModule.id);
+        const attachedIds = currentModule.sections?.flatMap(s => s.attachedDocumentIds || []) || [];
+        const byAttachment = allTemplates.filter(t => attachedIds.includes(t.id));
+        const unique = new Map();
+        byModuleId.forEach(t => unique.set(t.id, t));
+        byAttachment.forEach(t => unique.set(t.id, t));
+        return Array.from(unique.values());
+    }, [currentModule, allTemplates]);
 
     // Ejercicios asignados al estudiante
-    const studentId = user?.id || user?.email || "";
-    const assignments = useLiveQuery(async () => {
-        if (!currentModule?.id || !studentId) return [];
-        return db.exerciseAssignments
-            .where("moduleId")
-            .equals(currentModule.id)
-            .and(a => a.studentId === studentId)
-            .toArray();
-    }, [currentModule, studentId]);
+    const { data: assignments = [] } = useExerciseAssignments({ groupId, studentId: user?.id || '' });
+    const { data: allExercises = [] } = useExercises();
 
-    const exercises = useLiveQuery(async () => {
-        if (!assignments?.length) return [];
-        const exerciseIds = assignments.map(a => a.exerciseId);
-        return db.exercises.where("id").anyOf(exerciseIds).toArray();
-    }, [assignments]);
+    const exercises = useMemo(() => {
+        if (!assignments.length || !allExercises.length) return [];
+        const caseIds = assignments.map(a => a.caseId);
+        return allExercises.filter(e => caseIds.includes(e.id));
+    }, [assignments, allExercises]);
 
-    const [selectedExercise, setSelectedExercise] = useState<{ title: string; content: string } | null>(null);
+    const [selectedExercise, setSelectedExercise] = useState<{ title: string; content: { text: string; pdfUrl?: string; pdfName?: string; pdfSize?: string } } | null>(null);
     const [isViewExerciseOpen, setIsViewExerciseOpen] = useState(false);
 
-    const openExercise = (title: string, content: string) => {
+    const openExercise = (title: string, content: { text: string; pdfUrl?: string; pdfName?: string; pdfSize?: string }) => {
         setSelectedExercise({ title, content });
         setIsViewExerciseOpen(true);
     };
@@ -140,7 +121,7 @@ export default function StudentGroupDetailPage({ params }: { params: Promise<{ i
                                 <Users className="w-3.5 h-3.5" /> Docente
                             </p>
                             <p className="text-lg font-black text-gray-900 dark:text-gray-100">
-                                {allUsers?.find(u => u.userId === group.teacherId)?.name || group.teacherId}
+                                {allUsers?.find((u: any) => u.id === group.teacherId)?.fullName || group.teacherId}
                             </p>
                         </div>
                         <div className="space-y-1 border-l border-muted-foreground/10 pl-6">
@@ -175,65 +156,157 @@ export default function StudentGroupDetailPage({ params }: { params: Promise<{ i
                     </CardHeader>
                     <CardContent className="p-8 pt-0 space-y-6">
                         {currentModule?.sections && currentModule.sections.length > 0 ? (
-                            currentModule.sections.map((section, idx) => (
-                                <div key={section.id} className="space-y-4 bg-white dark:bg-black/40 p-6 rounded-2xl border shadow-sm group hover:border-primary/30 transition-all">
-                                    <div className="flex items-center gap-3">
-                                        <Badge className="h-8 w-8 rounded-full p-0 flex items-center justify-center bg-primary text-white border-none text-sm font-black shadow-lg">
-                                            {idx + 1}
-                                        </Badge>
-                                        <h3 className="font-black text-xl text-gray-800 dark:text-gray-100">{section.title}</h3>
-                                    </div>
-                                    <div
-                                        className="text-gray-600 dark:text-gray-300 prose prose-sm dark:prose-invert max-w-none ml-11"
-                                        dangerouslySetInnerHTML={{ __html: section.content }}
-                                    />
-
-                                    {/* RESOURCES */}
-                                    {section.resources && section.resources.length > 0 && (
-                                        <div className="pt-4 ml-11 flex flex-wrap gap-2">
-                                            {section.resources.map(res => (
-                                                <a
-                                                    key={res.id}
-                                                    href={res.url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="inline-flex items-center gap-2 px-4 py-2 bg-muted/50 rounded-xl text-xs font-bold hover:bg-primary/10 hover:text-primary transition-all border border-muted-foreground/10 hover:border-primary/20"
-                                                >
-                                                    <ExternalLink className="w-3.5 h-3.5" />
-                                                    {res.name}
-                                                </a>
-                                            ))}
+                            currentModule.sections.map((section, idx) => {
+                                const sectionTemplates = templates?.filter(t => (section.attachedDocumentIds || []).includes(t.id)) || [];
+                                return (
+                                    <div key={section.id} className="space-y-4 bg-white dark:bg-black/40 p-6 rounded-2xl border shadow-sm group hover:border-primary/30 transition-all">
+                                        <div className="flex items-center gap-3">
+                                            <Badge className="h-8 w-8 rounded-full p-0 flex items-center justify-center bg-primary text-white border-none text-sm font-black shadow-lg">
+                                                {idx + 1}
+                                            </Badge>
+                                            <h3 className="font-black text-xl text-gray-800 dark:text-gray-100">{section.title}</h3>
                                         </div>
-                                    )}
-                                </div>
-                            ))
+                                        <div
+                                            className="text-gray-600 dark:text-gray-300 prose prose-sm dark:prose-invert max-w-none ml-11"
+                                            dangerouslySetInnerHTML={{ __html: section.content }}
+                                        />
+
+                                        {/* RESOURCES: images and video rendered inline */}
+                                        {section.resources && section.resources.length > 0 && (
+                                            <div className="pt-4 ml-11 space-y-4">
+                                                {section.resources.map(res => (
+                                                    <div key={res.id}>
+                                                        {res.type === 'image' && (
+                                                            <div className="flex flex-col items-center gap-1">
+                                                                <img
+                                                                    src={res.url}
+                                                                    alt={res.name}
+                                                                    className="max-w-full max-h-96 rounded-xl object-contain border shadow-sm"
+                                                                />
+                                                                <span className="text-xs text-muted-foreground">{res.name}</span>
+                                                            </div>
+                                                        )}
+                                                        {res.type === 'video' && (
+                                                            <div className="flex flex-col items-center gap-1">
+                                                                <video
+                                                                    src={res.url}
+                                                                    controls
+                                                                    className="max-w-full max-h-96 rounded-xl border shadow-sm"
+                                                                />
+                                                                <span className="text-xs text-muted-foreground">{res.name}</span>
+                                                            </div>
+                                                        )}
+                                                        {(res.type !== 'image' && res.type !== 'video') && (
+                                                            <a
+                                                                href={res.url}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="inline-flex items-center gap-2 px-4 py-2 bg-muted/50 rounded-xl text-xs font-bold hover:bg-primary/10 hover:text-primary transition-all border border-muted-foreground/10 hover:border-primary/20"
+                                                            >
+                                                                <ExternalLink className="w-3.5 h-3.5" />
+                                                                {res.name}
+                                                            </a>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* DOCUMENTS ATTACHED TO THIS SECTION */}
+                                        {sectionTemplates.length > 0 && (
+                                            <div className="ml-11 mt-6 space-y-3">
+                                                <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Documentos de esta sección</p>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    {sectionTemplates.map(template => {
+                                                        const draft = drafts?.find(d => d.moduleId === template.id);
+                                                        const status = draft?.status || 'pending';
+                                                        const progress = calculateDocumentProgress(template, draft?.content);
+                                                        return (
+                                                            <div
+                                                                key={template.id}
+                                                                className={cn(
+                                                                    "group relative p-4 rounded-2xl border transition-all hover:shadow-md bg-white dark:bg-black/20 flex flex-col gap-3 overflow-hidden",
+                                                                    status === 'completed' ? 'border-green-500/20' :
+                                                                    status === 'in_progress' ? 'border-yellow-500/20' :
+                                                                    'hover:border-primary/50'
+                                                                )}
+                                                            >
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className={cn(
+                                                                        "h-8 w-8 rounded-lg flex items-center justify-center shrink-0 transition-all shadow-sm",
+                                                                        status === 'completed' ? "bg-green-500 text-white" :
+                                                                        status === 'in_progress' ? "bg-yellow-500 text-white" :
+                                                                        "bg-red-500 text-white"
+                                                                    )}>
+                                                                        {status === 'completed' ? <CheckCircle2 className="w-4 h-4" /> :
+                                                                         status === 'in_progress' ? <Clock className="w-4 h-4" /> :
+                                                                         <Circle className="w-4 h-4" />}
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <span className={cn(
+                                                                            "font-bold text-sm tracking-tight truncate block group-hover:text-primary transition-colors",
+                                                                            status === 'completed' && 'text-gray-500'
+                                                                        )}>
+                                                                            {template.title}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center justify-between gap-2">
+                                                                    <Badge
+                                                                        className={cn(
+                                                                            "text-[9px] uppercase font-black px-2 py-0.5 border-none text-white shadow-sm",
+                                                                            status === 'completed' ? "bg-green-500" :
+                                                                            status === 'in_progress' ? "bg-yellow-500" :
+                                                                            "bg-red-500"
+                                                                        )}
+                                                                    >
+                                                                        {status === 'completed' ? 'Finalizado' : status === 'in_progress' ? 'Iniciado' : 'Sin Iniciar'}
+                                                                    </Badge>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-[10px] font-bold text-primary">{progress}%</span>
+                                                                        <Progress value={progress} className="h-1.5 w-16 shadow-inner" />
+                                                                    </div>
+                                                                </div>
+                                                                <Link href={`/dashboard/student/documents/${template.id}?groupId=${groupId}`}>
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant={status === 'completed' ? "outline" : "default"}
+                                                                        className="w-full rounded-xl font-bold text-[10px] uppercase tracking-wider h-8 shadow-sm hover:scale-[1.02] transition-all"
+                                                                    >
+                                                                        {status === 'completed' ? 'Ver Documento' : status === 'in_progress' ? 'Continuar' : 'Iniciar'}
+                                                                        <ChevronRight className="ml-1 h-3 w-3 group-hover:translate-x-0.5 transition-transform" />
+                                                                    </Button>
+                                                                </Link>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })
                         ) : (
                             <p className="text-sm text-muted-foreground italic text-center py-12 bg-white/50 rounded-2xl border-2 border-dashed">El módulo no tiene contenido disponible aún.</p>
                         )}
                     </CardContent>
-                </Card>
 
-                {/* EJERCICIOS ASIGNADOS */}
-                {exercises && exercises.length > 0 && (
-                    <Card className="border-none shadow-none bg-muted/10 rounded-3xl overflow-hidden">
-                        <CardHeader className="p-8 pb-4">
-                            <div className="flex items-center gap-3 text-primary">
+                    {/* CASOS ASIGNADOS — dentro del mismo card del módulo, debajo de las secciones */}
+                    {exercises && exercises.length > 0 && (
+                        <div className="p-8 pt-0 border-t">
+                            <div className="flex items-center gap-3 text-primary mb-6 pt-6">
                                 <ScrollText className="w-6 h-6" />
                                 <CardTitle className="text-2xl font-black uppercase tracking-widest">Casos de Estudio</CardTitle>
                             </div>
-                            <CardDescription className="text-muted-foreground font-medium text-base ml-9">
-                                Ejercicios asignados para este módulo.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="p-8 pt-0">
-                            <div className="flex gap-6 overflow-x-auto pb-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pb-4">
                                 {exercises.map(exercise => {
-                                    const assignment = assignments?.find(a => a.exerciseId === exercise.id);
+                                    const assignment = assignments?.find(a => a.caseId === exercise.id);
+                                    const previewText = exercise.content?.text?.substring(0, 150) || 'Caso práctico en PDF';
                                     return (
                                         <div
                                             key={exercise.id}
                                             onClick={() => openExercise(exercise.title, exercise.content)}
-                                            className="flex-1 min-w-[400px] p-6 rounded-2xl border bg-white dark:bg-black/40 cursor-pointer hover:shadow-xl hover:border-primary/50 transition-all group"
+                                            className="p-6 rounded-2xl border bg-white dark:bg-black/40 cursor-pointer hover:shadow-xl hover:border-primary/50 transition-all group"
                                         >
                                             <div className="flex items-start gap-3 mb-3">
                                                 <FileText className="h-5 w-5 text-primary shrink-0 mt-0.5" />
@@ -241,21 +314,20 @@ export default function StudentGroupDetailPage({ params }: { params: Promise<{ i
                                                     <h4 className="font-black text-base group-hover:text-primary transition-colors line-clamp-2">
                                                         {exercise.title}
                                                     </h4>
+                                                    {exercise.content?.pdfSize && (
+                                                        <span className="text-xs text-muted-foreground">{exercise.content.pdfSize}</span>
+                                                    )}
                                                 </div>
                                             </div>
-                                            <p className="text-sm text-muted-foreground line-clamp-3">
-                                                {exercise.content?.substring(0, 150)}...
-                                            </p>
+                                            <p className="text-sm text-muted-foreground line-clamp-3">{previewText}</p>
                                             <div className="mt-4 flex items-center justify-between">
                                                 <Badge className={cn(
                                                     "text-[10px] uppercase font-black px-3 py-1 border-none text-white",
                                                     assignment?.status === 'completed' ? 'bg-green-500' :
-                                                    assignment?.status === 'in_progress' ? 'bg-yellow-500' :
-                                                    'bg-gray-400'
+                                                    assignment?.status === 'in_progress' ? 'bg-yellow-500' : 'bg-gray-400'
                                                 )}>
                                                     {assignment?.status === 'completed' ? 'Completado' :
-                                                     assignment?.status === 'in_progress' ? 'En progreso' :
-                                                     'Pendiente'}
+                                                     assignment?.status === 'in_progress' ? 'En progreso' : 'Pendiente'}
                                                 </Badge>
                                                 <span className="text-xs text-muted-foreground flex items-center gap-1">
                                                     Ver más <ChevronRight className="h-3 w-3" />
@@ -265,124 +337,32 @@ export default function StudentGroupDetailPage({ params }: { params: Promise<{ i
                                     );
                                 })}
                             </div>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {/* DOCUMENTS LIST */}
-                <Card className="border-none shadow-none bg-muted/10 rounded-3xl overflow-hidden">
-                    <CardHeader className="p-8 pb-4">
-                        <div className="flex items-center gap-3 text-primary">
-                            <FileText className="w-6 h-6" />
-                            <CardTitle className="text-2xl font-black uppercase tracking-widest">Contenido del Módulo</CardTitle>
                         </div>
-                        <CardDescription className="text-muted-foreground font-medium text-base ml-9">
-                            Gestiona y completa los documentos asignados a esta simulación.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="p-8 pt-0 grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {!templates || templates.length === 0 ? (
-                            <div className="col-span-full py-20 text-center bg-white/50 rounded-2xl border-2 border-dashed">
-                                <FileText className="w-12 h-12 mx-auto text-muted-foreground/30 mb-4" />
-                                <p className="text-lg font-medium text-muted-foreground italic">No hay documentos asignados.</p>
-                            </div>
-                        ) : (
-                            templates.map(template => {
-                                const draft = drafts?.find(d => d.moduleId === template.id);
-                                const status = draft?.status || 'pending';
-                                const progress = calculateDocumentProgress(template, draft?.content);
-
-                                return (
-                                    <div
-                                        key={template.id}
-                                        className={cn(
-                                            "group relative p-6 rounded-3xl border transition-all hover:shadow-2xl bg-white dark:bg-black/40 flex flex-col gap-6 overflow-hidden",
-                                            status === 'completed' ? 'border-green-500/20 shadow-green-500/5' : 
-                                            status === 'in_progress' ? 'border-yellow-500/20 shadow-yellow-500/5' : 
-                                            'hover:border-primary/50'
-                                        )}
-                                    >
-                                        {/* ROW 1: TITLE */}
-                                        <div className="flex items-center gap-4 relative z-10">
-                                            <div className={cn(
-                                                "h-12 w-12 rounded-2xl flex items-center justify-center shrink-0 transition-all shadow-sm",
-                                                status === 'completed' ? "bg-green-500 text-white" : 
-                                                status === 'in_progress' ? "bg-yellow-500 text-white" : 
-                                                "bg-red-500 text-white"
-                                            )}>
-                                                {status === 'completed' ? <CheckCircle2 className="w-6 h-6" /> : 
-                                                 status === 'in_progress' ? <Clock className="w-6 h-6" /> : 
-                                                 <Circle className="w-6 h-6" />}
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <span className={cn(
-                                                    "font-black text-lg tracking-tight truncate block group-hover:text-primary transition-colors",
-                                                    status === 'completed' && 'text-gray-500'
-                                                )}>
-                                                    {template.title}
-                                                </span>
-                                                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">Referencia: Módulo {template.moduleId}</p>
-                                            </div>
-                                        </div>
-
-                                        {/* ROW 2: STATUS & PROGRESS */}
-                                        <div className="space-y-4 bg-muted/50 p-5 rounded-2xl border border-muted-foreground/10 relative z-10">
-                                            <div className="flex items-center justify-between">
-                                                <Badge 
-                                                    className={cn(
-                                                        "text-[10px] uppercase font-black px-3 py-1 border-none text-white shadow-sm",
-                                                        status === 'completed' ? "bg-green-500" : 
-                                                        status === 'in_progress' ? "bg-yellow-500" : 
-                                                        "bg-red-500"
-                                                    )}
-                                                >
-                                                    {status === 'completed' ? 'Finalizado' : status === 'in_progress' ? 'Iniciado' : 'Sin Iniciar'}
-                                                </Badge>
-                                                <div className="text-right">
-                                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-0.5">Avance</span>
-                                                    <span className="text-sm font-black text-primary">{progress}%</span>
-                                                </div>
-                                            </div>
-                                            <Progress value={progress} className="h-2 shadow-inner" />
-                                        </div>
-
-                                        {/* ROW 3: ACTION BUTTON */}
-                                        <Link href={`/dashboard/student/documents/${template.id}?groupId=${groupId}`} className="relative z-10">
-                                            <Button 
-                                                size="lg" 
-                                                variant={status === 'completed' ? "outline" : "default"} 
-                                                className="w-full rounded-2xl font-black text-xs uppercase tracking-widest h-12 shadow-md hover:scale-[1.02] transition-all"
-                                            >
-                                                {status === 'completed' ? 'Ver Documento' : status === 'in_progress' ? 'Continuar Simulacion' : 'Iniciar Simulacion'} 
-                                                <ChevronRight className="ml-2 w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                                            </Button>
-                                        </Link>
-                                    </div>
-                                );
-                            })
-                        )}
-                    </CardContent>
+                    )}
                 </Card>
+
             </div>
 
-            {/* DIALOG VER EJERCICIO */}
-            <Dialog open={isViewExerciseOpen} onOpenChange={setIsViewExerciseOpen}>
-                <DialogContent style={{ width: '1400px', maxWidth: '95vw' }} className="max-h-[90vh]">
+        <Dialog open={isViewExerciseOpen} onOpenChange={setIsViewExerciseOpen}>
+                <DialogContent style={{ width: '1400px', maxWidth: '95vw', height: '90vh' }}>
                     <DialogHeader>
                         <DialogTitle className="text-2xl font-black">{selectedExercise?.title}</DialogTitle>
                     </DialogHeader>
-                    <div className="overflow-y-auto max-h-[70vh] pr-2">
-                        <div className="space-y-4">
-                            <div>
-                                <Label className="text-base font-semibold">Contenido del caso de estudio</Label>
-                                <Textarea
-                                    value={selectedExercise?.content || ""}
-                                    readOnly
-                                    rows={25}
-                                    className="min-h-[500px] text-base mt-2"
-                                />
-                            </div>
-                        </div>
+                    <div className="flex-1 h-full min-h-0 overflow-y-auto">
+                        {selectedExercise?.content?.pdfUrl ? (
+                            <iframe
+                                src={selectedExercise.content.pdfUrl}
+                                className="w-full h-[calc(90vh-100px)] rounded-lg border"
+                                title={selectedExercise.title}
+                            />
+                        ) : (
+                            <Textarea
+                                value={selectedExercise?.content?.text || ""}
+                                readOnly
+                                rows={25}
+                                className="min-h-[500px] text-base mt-2"
+                            />
+                        )}
                     </div>
                 </DialogContent>
             </Dialog>

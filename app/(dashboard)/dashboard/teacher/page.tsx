@@ -7,31 +7,29 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/db";
+import { useGroups, useModules, useDrafts, useTemplates, useUsers } from "@/hooks/useData";
 import { cn } from "@/lib/utils";
 import { useAppText } from "@/hooks/useAppText";
 
 export default function TeacherDashboard() {
     const { user } = useAuth();
 
-    // 1. Fetch live data
-    const allGroups = useLiveQuery(() => db.groups.toArray());
-    const allModules = useLiveQuery(() => db.modules.toArray());
-    const allDrafts = useLiveQuery(() => db.drafts.toArray());
-    const allTemplates = useLiveQuery(() => db.templates.toArray());
-    const allUsers = useLiveQuery(() => db.users.toArray());
+    const { data: allGroups } = useGroups();
+    const { data: allModules } = useModules();
+    const { data: allDrafts } = useDrafts();
+    const { data: allTemplates } = useTemplates();
+    const { data: allUsers } = useUsers();
     const { t } = useAppText();
 
     // Find my userId from the database (matching by email or id from auth)
     const myDbUser = allUsers?.find(u =>
-        u.userId === user?.id ||
+        u.id === user?.id ||
         u.email === user?.email ||
-        u.name === user?.fullName
+        u.fullName === user?.fullName
     );
 
     const myGroups = allGroups?.filter(g =>
-        g.teacherId === myDbUser?.userId ||
+        g.teacherId === myDbUser?.id ||
         g.teacherId === user?.id ||
         g.teacherId === user?.fullName ||
         g.teacherId === user?.email

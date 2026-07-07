@@ -9,8 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, Trash2, Layers, Type, CheckSquare, Hash, Calendar, AlignLeft, LayoutGrid, AlertTriangle, Info, ArrowUp, ArrowDown } from "lucide-react";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/db";
+import { useCatalogs, useTemplates } from "@/hooks/useData";
 
 const generateTagId = (label: string): string => {
     if (!label) return "";
@@ -47,8 +46,8 @@ const getGhostImage = () => {
 export function Sidebar({ template, setTemplate, activeFieldId, setActiveFieldId, onBulkAdd }: SidebarProps) {
     const sectionsEndRef = useRef<HTMLDivElement>(null);
     const fieldsEndRef = useRef<HTMLDivElement>(null);
-    const catalogs = useLiveQuery(() => db.catalogs.toArray());
-    const templates = useLiveQuery(() => db.templates.toArray());
+    const { data: catalogs } = useCatalogs();
+    const { data: templates } = useTemplates();
 
     const activeField = useMemo(() => {
         if (!activeFieldId) return null;

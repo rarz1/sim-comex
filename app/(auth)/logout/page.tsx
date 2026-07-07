@@ -1,7 +1,6 @@
 
 "use client";
 
-import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
@@ -10,15 +9,8 @@ export default function LogoutPage() {
 
     useEffect(() => {
         const logout = async () => {
-            // Clear mock session
-            if (typeof window !== 'undefined') {
-                localStorage.removeItem('mock_user_session');
-            }
-
-            // Clear supabase session
-            const supabase = createClient();
-            await supabase.auth.signOut();
-
+            localStorage.removeItem('cached_user_profile');
+            await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
             router.push('/login');
             router.refresh();
         };

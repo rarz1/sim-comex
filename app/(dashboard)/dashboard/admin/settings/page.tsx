@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/db";
+import { useAppTexts, useCreateOrUpdateAppText } from "@/hooks/useData";
 import { defaultTexts } from "@/lib/appTexts";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -36,8 +35,8 @@ export default function AdminSettingsPage() {
     const [saving, setSaving] = useState<string | null>(null);
     const { t } = useAppText();
 
-    // Fetch existing overrides
-    const overrides = useLiveQuery(() => db.table('appTexts').toArray());
+    const { data: overrides } = useAppTexts();
+    const createOrUpdateAppText = useCreateOrUpdateAppText();
     const overrideMap = new Map<string, string>();
     overrides?.forEach((item: any) => overrideMap.set(item.id, item.value));
 
@@ -47,7 +46,7 @@ export default function AdminSettingsPage() {
     const handleSave = async (key: string, value: string) => {
         setSaving(key);
         try {
-            await db.table('appTexts').put({ id: key, value });
+            await createOrUpdateAppText.mutateAsync({ id: key, key, value });
             toast.success(t('admin.settings.toast_success', "Texto actualizado correctamente"));
         } catch (error) {
             console.error(error);
@@ -59,7 +58,8 @@ export default function AdminSettingsPage() {
 
     const handleReset = async (key: string) => {
         try {
-            await db.table('appTexts').delete(key);
+            const defaultVal = defaultTexts[key] || '';
+            await createOrUpdateAppText.mutateAsync({ id: key, key, value: defaultVal });
             toast.success(t('admin.settings.toast_success', "Texto restaurado"));
         } catch (error) {
             console.error(error);

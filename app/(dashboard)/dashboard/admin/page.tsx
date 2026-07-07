@@ -2,21 +2,19 @@
 
 "use client";
 
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/db";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { FileText, Users, BookOpen, Clock, Activity, Archive, Database, List } from "lucide-react";
 import { useAppText } from "@/hooks/useAppText";
+import { useGroups, useModules, useTemplates, useUsers, useCatalogs } from "@/hooks/useData";
 
 export default function AdminDashboard() {
-    // Fetch Data
-    const groups = useLiveQuery(() => db.groups.toArray());
-    const modules = useLiveQuery(() => db.modules.toArray());
-    const templates = useLiveQuery(() => db.templates.toArray());
-    const users = useLiveQuery(() => db.users.toArray());
-    const catalogs = useLiveQuery(() => db.catalogs.toArray());
+    const { data: groups } = useGroups();
+    const { data: modules } = useModules();
+    const { data: templates } = useTemplates();
+    const { data: users } = useUsers();
+    const { data: catalogs } = useCatalogs();
     const { t } = useAppText();
     // Calculate Stats
     const now = new Date();

@@ -11,8 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ChevronLeft, ChevronRight, Save, CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-import { db } from "@/lib/db/db";
-import { useLiveQuery } from "dexie-react-hooks";
+import { useCatalogs, useDrafts, useCreateOrUpdateDraft } from "@/hooks/useData";
 import { useAuth } from "@/hooks/useAuth";
 import { validationService, CrossDocumentMatch } from "@/lib/services/validationService";
 import { generateFilledPDF } from "@/lib/pdf/pdfGenerator";
@@ -37,32 +36,20 @@ export function FormRenderer({ template, groupId = "default", initialData = {}, 
     const [formData, setFormData] = useState<Record<string, any>>(initialData);
     const [lastSaved, setLastSaved] = useState<number | null>(null);
     const [crossValidation, setCrossValidation] = useState<Record<string, CrossDocumentMatch[]>>({});
-    const catalogs = useLiveQuery(() => db.catalogs.toArray());
+    const { data: catalogs } = useCatalogs();
+    const { data: allDrafts } = useDrafts();
+    const saveDraftMutation = useCreateOrUpdateDraft();
 
-    // Load from Dexie on mount
+    const currentDraft = allDrafts?.find(
+        d => d.userId === user?.id && d.moduleId === template.id && d.groupId === groupId
+    );
+
     useEffect(() => {
-        if (!user) return;
-
-        const loadDraft = async () => {
-            try {
-                // Using the specific group-based query
-                const draft = await db.drafts.where({
-                    userId: user.id,
-                    moduleId: template.id,
-                    groupId: groupId
-                }).first();
-
-                if (draft) {
-                    setFormData(draft.content);
-                    setLastSaved(draft.lastUpdated);
-                }
-            } catch (error) {
-                console.error("Error loading draft:", error);
-            }
-        };
-
-        loadDraft();
-    }, [user, template.id, groupId, readOnly]);
+        if (currentDraft) {
+            setFormData(currentDraft.content);
+            setLastSaved(currentDraft.lastUpdated);
+        }
+    }, [currentDraft]);
 
     const sections = template.schema.sections;
     const currentSection = sections[currentSectionIndex];
@@ -98,33 +85,19 @@ export function FormRenderer({ template, groupId = "default", initialData = {}, 
 
         try {
             const timestamp = Date.now();
-            const existing = await db.drafts.where({
-                userId: user.id,
-                moduleId: template.id,
-                groupId: groupId
-            }).first();
-
             const status = isFinal ? 'completed' : 'in_progress';
+            const payload: Record<string, any> = {
+                documentId: currentDraft?.documentId || crypto.randomUUID(),
+                moduleId: template.id,
+                groupId,
+                userId: user.id,
+                content: dataToSave,
+                lastUpdated: timestamp,
+                status,
+            };
+            if (currentDraft?.id) payload.id = currentDraft.id;
 
-            if (existing?.id) {
-                await db.drafts.update(existing.id, {
-                    content: dataToSave,
-                    lastUpdated: timestamp,
-                    isSynced: false,
-                    status: status
-                });
-            } else {
-                await db.drafts.add({
-                    documentId: crypto.randomUUID(),
-                    moduleId: template.id,
-                    groupId: groupId,
-                    userId: user.id,
-                    content: dataToSave,
-                    lastUpdated: timestamp,
-                    isSynced: false,
-                    status: status
-                });
-            }
+            await saveDraftMutation.mutateAsync(payload);
 
             setLastSaved(timestamp);
             if (onSave) onSave(dataToSave);

@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, RefreshCw, X, Printer, Users, BookOpen, Calendar, CheckCircle, XCircle, FileCheck, AlertCircle } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { dbService } from "@/lib/services/dbService";
+import { dataService } from "@/lib/services/dataService";
 import { validationService } from "@/lib/services/validationService";
 import { Group } from "@/types/group";
 import { Module } from "@/types/modules";
@@ -38,11 +38,10 @@ export default function TeacherReportsPage() {
     const loadGroups = async () => {
         if (!user) return;
         try {
+            const allGroups = await dataService.getAll<Group>('groups');
             if (user.role === 'teacher') {
-                const teacherGroups = await dbService.getGroupsByTeacher(user.id);
-                setGroups(teacherGroups);
+                setGroups(allGroups.filter(g => g.teacherId === user.id));
             } else if (user.role === 'admin') {
-                const allGroups = await dbService.getGroups();
                 setGroups(allGroups);
             } else {
                 setGroups([]);
@@ -73,12 +72,12 @@ export default function TeacherReportsPage() {
     const loadGroupDetails = async (groupId: string) => {
         setLoading(true);
         try {
-            const group = await dbService.getGroupById(groupId);
+            const group = await dataService.getById<Group>('groups', groupId);
             if (!group) return;
             setCurrentGroup(group);
 
             if (group.moduleId) {
-                const moduleData = await dbService.getModuleById(group.moduleId);
+                const moduleData = await dataService.getById<Module>('modules', group.moduleId);
                 setCurrentModule(moduleData || null);
 
                 if (moduleData) {
@@ -105,10 +104,10 @@ export default function TeacherReportsPage() {
                 const report = await validationService.generateStudentReport(memberId, moduleId, group.id);
 
                 let studentName = memberId;
-                const dbUser = await dbService.getUserByUserId(memberId);
-                if (dbUser && dbUser.name) {
-                    studentName = dbUser.name;
-                }
+                try {
+                    const profile = await dataService.getById<any>('profiles', memberId);
+                    if (profile?.fullName) studentName = profile.fullName;
+                } catch {}
 
                 summaries.push({
                     studentId: memberId,

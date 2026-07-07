@@ -1,9 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/db";
-import { dbService } from "@/lib/services/dbService";
+import { useGroups, useModules, useUsers, useTemplates, useCreateOrUpdateGroup, useDeleteGroup } from "@/hooks/useData";
 import { Group } from "@/types/group";
 import { Module } from "@/types/modules";
 import { Button } from "@/components/ui/button";
@@ -16,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Plus, Trash2, Edit, Save, Users, Calendar, BookOpen, ArrowLeft, FileText } from "lucide-react";
 import { formatDate } from "date-fns";
 import { es } from "date-fns/locale";
+import { toast } from "sonner";
 
 // Teachers will be fetched dynamically from the database
 
@@ -40,15 +39,17 @@ export function GroupManager() {
     const [memberFilter, setMemberFilter] = useState("");
     const [manualName, setManualName] = useState("");
 
+    const createOrUpdateGroup = useCreateOrUpdateGroup();
+    const deleteGroup = useDeleteGroup();
+
     // Data Loaders
-    const groups = useLiveQuery(() => db.groups.toArray());
-    const modules = useLiveQuery(() => db.modules.toArray());
-    const allUsers = useLiveQuery(() => db.users.toArray());
+    const { data: groups } = useGroups();
+    const { data: modules } = useModules();
+    const { data: allUsers } = useUsers() as { data: any[] };
+    const { data: allTemplates } = useTemplates();
 
     // Fetch teachers specifically to ensure we get them even if allUsers is huge or paginated (future proof)
-    const dbTeachers = useLiveQuery(() => db.users.where({ role: 'teacher' }).toArray());
-
-    const allTemplates = useLiveQuery(() => db.templates.toArray());
+    const dbTeachers = allUsers?.filter(u => u.role === 'teacher');
 
     // Filtered lists from DB
     const availableStudents = allUsers?.filter(u => u.role === 'student') || [];
@@ -87,8 +88,7 @@ export function GroupManager() {
 
     const handleDelete = async (id: string) => {
         if (confirm("⚠️ ¿Estás seguro de eliminar este grupo permanentemente?\nEsta acción no se puede deshacer.")) {
-            await db.groups.delete(id);
-            await dbService.deleteGroupCloud(id);
+            deleteGroup.mutate(id);
         }
     };
 
@@ -98,8 +98,13 @@ export function GroupManager() {
             return;
         }
 
-        await db.groups.put(formData);
-        await dbService.pushGroup(formData);
+        try {
+            await createOrUpdateGroup.mutateAsync(formData);
+            toast.success("Grupo guardado correctamente");
+        } catch (err: any) {
+            console.error("Error saving group:", err);
+            toast.error(`Error al guardar: ${err.message || 'Error desconocido'}`);
+        }
         setIsEditing(false);
     };
 

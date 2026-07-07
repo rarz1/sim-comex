@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, RefreshCw } from "lucide-react";
 import { ModuleValidationSummary } from "@/components/reports/ModuleValidationSummary";
 import { ValidationReportCard } from "@/components/reports/ValidationReportCard";
-import { dbService } from "@/lib/services/dbService";
+import { dataService } from "@/lib/services/dataService";
 import { validationService } from "@/lib/services/validationService";
 import { Group } from "@/types/group";
 import { Module } from "@/types/modules";
@@ -48,8 +48,8 @@ export default function AdminReportsPage() {
     const loadInitialData = async () => {
         try {
             const [allGroups, allTeachers] = await Promise.all([
-                dbService.getGroups(),
-                dbService.getTeachers()
+                dataService.getAll<Group>('groups'),
+                dataService.getAll<any>('profiles', { role: 'teacher' })
             ]);
             setGroups(allGroups);
             setTeachers(allTeachers);
@@ -68,11 +68,11 @@ export default function AdminReportsPage() {
     const loadGroupDetails = async (groupId: string) => {
         setLoading(true);
         try {
-            const group = await dbService.getGroupById(groupId);
+            const group = await dataService.getById<Group>('groups', groupId);
             if (!group) return;
 
             if (group.moduleId) {
-                const moduleData = await dbService.getModuleById(group.moduleId);
+                const moduleData = await dataService.getById<Module>('modules', group.moduleId);
                 setCurrentModule(moduleData || null);
 
                 if (moduleData) {
@@ -99,10 +99,10 @@ export default function AdminReportsPage() {
                 const report = await validationService.generateStudentReport(memberId, moduleId, group.id);
 
                 let studentName = memberId;
-                const user = await dbService.getUserByUserId(memberId);
-                if (user && user.name) {
-                    studentName = user.name;
-                }
+                try {
+                    const profile = await dataService.getById<any>('profiles', memberId);
+                    if (profile?.fullName) studentName = profile.fullName;
+                } catch {}
 
                 summaries.push({
                     studentId: memberId,
@@ -171,8 +171,8 @@ export default function AdminReportsPage() {
                             <SelectContent>
                                 <SelectItem value="all">Todos los docentes</SelectItem>
                                 {teachers.map(teacher => (
-                                    <SelectItem key={teacher.userId} value={teacher.userId}>
-                                        {teacher.name}
+                                    <SelectItem key={teacher.id} value={teacher.id}>
+                                        {teacher.fullName}
                                     </SelectItem>
                                 ))}
                             </SelectContent>

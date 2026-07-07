@@ -2,10 +2,9 @@
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { FormRenderer } from "@/components/document-renderer/FormRenderer";
-import { FormVisualizer } from "@/components/document-renderer/FormVisualizer";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/db";
+import { FormRenderer } from "@/components/form-builder/FormRenderer";
+import { FormVisualizer } from "@/components/form-builder/FormVisualizer";
+import { useModule, useTemplates, useDrafts } from "@/hooks/useData";
 import { FileText, Printer, Clock, CheckCircle, AlertCircle } from "lucide-react";
 import { cn, calculateDocumentProgress } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -19,14 +18,11 @@ interface TeacherDocumentViewerProps {
 }
 
 export function TeacherDocumentViewer({ studentId, studentName, moduleId, groupId }: TeacherDocumentViewerProps) {
-    // 1. Fetch the Module to get all attached document IDs from sections
-    const module = useLiveQuery(() => db.modules.get(moduleId));
+    const { data: module } = useModule(moduleId);
 
-    // 2. Get all document IDs attached to any section in this module
     const attachedDocIds = module?.sections?.flatMap((s: any) => s.attachedDocumentIds || []) || [];
 
-    // 3. Fetch all those templates
-    const allTemplates = useLiveQuery(() => db.templates.toArray());
+    const { data: allTemplates } = useTemplates();
     const templates = allTemplates?.filter((t: any) => attachedDocIds.includes(t.id)) || [];
 
     return (
@@ -41,8 +37,8 @@ export function TeacherDocumentViewer({ studentId, studentName, moduleId, groupI
 }
 
 function DocumentItem({ template, studentId, studentName, groupId }: { template: any, studentId: string, studentName: string, groupId: string }) {
-    // Load specific draft
-    const draft = useLiveQuery(() => db.drafts.where({ userId: studentId, moduleId: template.id, groupId: groupId }).first());
+    const { data } = useDrafts({ userId: studentId, moduleId: template.id, groupId });
+    const draft = data?.[0];
     
     const progress = calculateDocumentProgress(template, draft?.content);
     const status = (draft as any)?.status || 'pending';

@@ -6,8 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Save, Printer } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { Canvas } from "./Canvas";
-import { db } from "@/lib/db/db";
-import { dbService } from "@/lib/services/dbService";
+import { dataService } from "@/lib/services/dataService";
 
 interface FormDesignerProps {
     initialTemplate?: DocumentTemplate;
@@ -40,8 +39,7 @@ export function FormDesigner({ initialTemplate, onClose }: FormDesignerProps) {
             templateToSave.updatedAt = new Date().toISOString();
             templateToSave.pdfUrl = pdfImage || ''; // Save base64/url to template (CAUTION: Large Base64 strings in IndexedDB can be heavy)
 
-            await db.templates.put(templateToSave);
-            await dbService.pushTemplate(templateToSave);
+            await dataService.save('templates', templateToSave);
 
             setTemplate(templateToSave);
             alert("Plantilla guardada correctamente.");

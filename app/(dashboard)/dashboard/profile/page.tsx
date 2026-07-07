@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/hooks/useAuth";
+import { useGroups, useDrafts } from "@/hooks/useData";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -19,8 +20,6 @@ import {
     ShieldCheck,
     PenTool
 } from "lucide-react";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/db";
 import { useMemo } from "react";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
@@ -29,8 +28,8 @@ export default function ProfilePage() {
     const { user } = useAuth();
     
     // Fetch user-specific stats
-    const allGroups = useLiveQuery(() => db.groups.toArray()) || [];
-    const myDrafts = useLiveQuery(() => user ? db.drafts.where({ userId: user.id }).toArray() : []) || [];
+    const { data: allGroups = [] } = useGroups();
+    const { data: myDrafts = [] } = useDrafts({ userId: user?.id || '' });
     
     const myGroups = useMemo(() => {
         if (!user) return [];

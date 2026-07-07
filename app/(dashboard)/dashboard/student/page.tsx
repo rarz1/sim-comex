@@ -7,8 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/hooks/useAuth";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/db";
+import { useGroups, useModules, useTemplates, useUsers, useDrafts } from "@/hooks/useData";
 import { cn, calculateDocumentProgress } from "@/lib/utils";
 import { useAppText } from "@/hooks/useAppText";
 import { useMemo } from "react";
@@ -17,23 +16,23 @@ export default function StudentDashboard() {
     const { user } = useAuth();
 
     // 1. Fetch live data
-    const allGroups = useLiveQuery(() => db.groups.toArray());
-    const allModules = useLiveQuery(() => db.modules.toArray());
-    const allTemplates = useLiveQuery(() => db.templates.toArray());
-    const allUsers = useLiveQuery(() => db.users.toArray());
-    const myDrafts = useLiveQuery(() => user ? db.drafts.where({ userId: user.id }).toArray() : [], [user]);
+    const { data: allGroups } = useGroups();
+    const { data: allModules } = useModules();
+    const { data: allTemplates } = useTemplates();
+    const { data: allUsers } = useUsers();
+    const { data: myDrafts } = useDrafts({ userId: user?.id || '' });
     const { t } = useAppText();
 
     // Find my userId from the database (matching by email or id from auth)
     const myDbUser = allUsers?.find(u =>
-        u.userId === user?.id ||
+        u.id === user?.id ||
         u.email === user?.email ||
-        u.name === user?.fullName
+        u.fullName === user?.fullName
     );
 
     // 2. Identify my groups (Check both ID and Name for compatibility)
     const myGroups = allGroups?.filter(g =>
-        (g.members || []).includes(myDbUser?.userId || "") ||
+        (g.members || []).includes(myDbUser?.id || "") ||
         (g.members || []).includes(user?.id || "") ||
         (g.members || []).includes(user?.fullName || "")
     ) || [];
@@ -270,7 +269,7 @@ export default function StudentDashboard() {
                                             <h4 className="font-black text-lg text-primary leading-tight">{group.name}</h4>
                                             <div className="flex flex-col gap-1">
                                                 <p className="text-xs font-bold text-muted-foreground flex items-center gap-1.5 uppercase font-mono tracking-wider">
-                                                    <Users className="w-3.5 h-3.5" /> Prof. {allUsers?.find(u => u.userId === group.teacherId)?.name || group.teacherId}
+                                                    <Users className="w-3.5 h-3.5" /> Prof. {allUsers?.find(u => u.id === group.teacherId)?.fullName || group.teacherId}
                                                 </p>
                                                 <p className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
                                                     <BookOpen className="w-3.5 h-3.5" /> {mod?.title || "Módulo Académico"}

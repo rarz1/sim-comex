@@ -30,18 +30,19 @@ SIM 1/
 ├── components/             # Componentes React
 │   ├── admin/              # Componentes administración
 │   ├── auth/               # Autenticación
-│   ├── form-builder/       # Constructor de formularios
-│   ├── layout/             # Header, Sidebar
+│   ├── form-builder/       # Constructor de formularios + renderer
+│   ├── layout/             # Header, Sidebar, theme-provider
 │   ├── marketing/          # Landing page
 │   ├── reports/            # Reportes
-│   ├── sync/               # Sincronización offline
 │   ├── teacher/            # Componentes profesor
 │   └── ui/                 # Componentes UI (shadcn)
 ├── lib/                    # Utilidades y servicios
+│   ├── contexts/           # React contexts (SyncContext)
 │   ├── db/                 # Configuración Dexie
 │   ├── pdf/                # Generación PDF
 │   ├── services/           # Servicios (auth, db, validation)
 │   ├── supabase/           # Cliente Supabase
+│   ├── defaultCatalogs.ts  # Catálogos por defecto
 │   └── utils.ts            # Utilidades generales
 ├── hooks/                  # React hooks personalizados
 ├── types/                  # TypeScript types
@@ -92,7 +93,7 @@ SIM 1/
 - `templates` - Plantillas de formularios
 - `drafts` - Borradores (con sync)
 - `documents` - Documentos finalizados
-- `catalogs` - Catálogos maestros (listas de 2 columnas: etiqueta + valor)
+- `catalogs` - Catálogos maestros (tipos: simple, two_column, three_column)
 
 ### Formularios dinámicos
 - Constructor visual de formularios
@@ -129,21 +130,72 @@ SIM 1/
 
 ## Errores conocidos y soluciones
 
-*(Agregar aquí errores encontrados y cómo se resolvieron)*
+- **Registro de usuarios en grupos solo local**: `pullGroups()` llamaba `db.groups.clear()` ANTES de verificar que Supabase tuviera datos válidos. Si `pushGroup()` fallaba (o no se había llamado), al recargar la app se perdían todos los datos locales de grupos/miembros. Corregido: ahora `pullGroups()` solo hace `clear()` si la respuesta de Supabase contiene datos (`data.length > 0`). Si la fetch falla o devuelve vacío, se conservan los datos locales. Misma corrección aplicada a `pullModules`, `pullTemplates`, `pullExerciseFolders`, `pullExercises`, `pullExerciseAssignments`, `pullUsers`, `pullCatalogs`.
+- **Falta de re-push de grupos**: `syncNow()` (sincronización manual) no subía los grupos locales a Supabase. Agregado `pushAllGroups()` en `dbService` y llamado desde `syncNow()` antes de sincronizar drafts.
+- **Pérdida de miembros al recargar por initialSync sin push previo**: El `initialSync()` solo hacía pull. Si datos locales tenían miembros que no estaban en Supabase (push falló), el pull los sobrescribía. Corregido: `initialSync()` ahora hace `pushAllGroups()` antes de `pullGroups()`.
 
 ---
 
 ## Pendientes y tareas futuras
 
-- Revisar y optimizar la sincronización en tiempo real con Supabase
-- Implementar generación real de PDFs (actualmente simulada)
-- Mejorar la experiencia offline con service workers
-- Tests unitarios y de integración
-- Curar napkin.md periódicamente (quitar items obsoletos, mantener máximo 10 por categoría)
+### Prioritario
+3. **Migrar `getCurrentUser()` a API route**: Aunque ahora funciona con cached profile, conviene migrar `supabase.auth.getSession()` y `refreshSession()` a API route server-side para evitar cualquier bloqueo.
+4. **Migrar `getSession()`, `hasValidSession()`, `getConnectionStatus()`**: Todas usan `createClient()` que lee cookie de Supabase. Si la cookie no es legible (formato incorrecto, HttpOnly, Secure), fallan. Ideal: una API route `/api/auth/session` que verifique la sesión server-side.
+
+### Mediano plazo
+5. **Sync SQL desactualizada**: `supabase_migration.sql` tiene columnas viejas (`exercise_id`, `teacher_id`, `module_ids`) que la Sesión 20 refactorizó a `caseId`, etc. Si se migra desde 0, `pullExerciseAssignments` mapearía `d.case_id` que no existe en Supabase.
+6. **Implementar generación real de PDFs** (actualmente simulada)
+7. **Mejorar experiencia offline con service workers**
+8. **Tests unitarios y de integración**
+9. **Curar napkin.md periódicamente** (quitar items obsoletos, mantener máximo 10 por categoría)
 
 ---
 
 ## Historial de sesiones
+
+### Sesión 18 - Junio 2026
+- **Fix REAL pérdida de miembros en grupos al recargar**:
+  - El fix de la Sesión 17 solo corrigió `pullGroups()` pero dejó los otros 7 métodos `pull*` con el patrón roto de `clear()` incondicional.
+  - **Corregido `pullUsers()`**: Movido `db.users.clear()` DENTRO del `if (data && data.length > 0)`. Antes siempre limpiaba usuarios locales incluso si Supabase devolvía vacío/error → los usuarios desaparecían al recargar.
+  - **Corregido `pullCatalogs()`**: Mismo fix. `clear()` solo si hay datos.
+  - **Corregido `pullModules()`**: Cambiado `if (data)` por `if (data && data.length > 0)`. Antes hacía `clear()` incluso cuando `data = []`.
+  - **Corregido `pullTemplates()`**: Mismo fix que `pullModules`.
+  - **Corregido `pullExerciseFolders()`**: Mismo fix.
+  - **Corregido `pullExercises()`**: Mismo fix.
+  - **Corregido `pullExerciseAssignments()`**: Mismo fix.
+  - **Agregado `pushAllGroups()` antes de `pullGroups()` en `initialSync()`** (SyncContext.tsx): Si los datos locales son más recientes (ej: push a Supabase falló por estar offline), ahora se suben ANTES de hacer pull, evitando que el pull sobrescriba miembros con datos obsoletos de la nube. Envuelto en try-catch para que no bloquee el sync si falla.
+  - **`pullGroups()` merge de miembros locales**: Ahora preserva `members` locales si la nube tiene `members: []` (push falló). Compara local vs cloud y usa el que tenga datos.
+  - **`pullModules()` merge de `groupIds`/`sections`**: Mismo patrón que `pullGroups` para evitar pérdida de datos anidados.
+  - **`pushGroup()` mejor logging**: Agregado `JSON.stringify(error)` para ver error vacío `{}` y fallback `|| error.code || 'Error desconocido'`.
+- Errores: 7 métodos `pull*` compartían el mismo bug de `clear()` prematuro. Todos corregidos. Push a Supabase falla con error `{}` (posible sesión expirada o proyecto pausado).
+- Pendientes: Monitorear persistencia de miembros en grupos. Verificar que `pullUsers` ya no pierde usuarios al recargar.
+
+### Sesión 19 - Junio 2026
+- **Rich Text Editor para contenido de secciones**:
+  - Creado `components/admin/RichTextEditor.tsx`: Editor WYSIWYG con TipTap. Toolbar completa: Negrita, Cursiva, Subrayado, H1/H2/H3, Listas, Alineación, inserción de imágenes, Undo/Redo.
+  - Creado `components/ui/toggle.tsx`: Componente Toggle de shadcn/ui para el toolbar.
+  - Actualizado `ModuleEditor.tsx`: Reemplazado `<Textarea>` por `<RichTextEditor>` en contenido de secciones.
+  - Paquetes instalados: `@tiptap/react`, `@tiptap/starter-kit`, `@tiptap/extension-text-align`, `@tiptap/extension-image`, `@tiptap/extension-underline`, `@tiptap/extension-placeholder`.
+- **Vista Estudiante: Documentos dentro de secciones**:
+  - `student/groups/[id]/page.tsx`: Documentos (formularios) ahora se renderizan DENTRO de cada sección, con estado y progreso. Eliminada la card separada "Contenido del Módulo".
+  - Recursos imagen/video se renderizan como `<img>` y `<video>` inline (no como links).
+- **Vista Profesor: HTML rendering**:
+  - `teacher/groups/[id]/page.tsx`: Cambiado `whitespace-pre-wrap` por `dangerouslySetInnerHTML` + `prose`.
+- **Instalado `@tailwindcss/typography`**: Agregado `@plugin` en `globals.css`.
+- Errores: Ninguno. `tsc --noEmit` pasa.
+- Pendientes: N/A.
+
+### Sesión 16 - Junio 2026
+- **Sincronización de Usuarios con Supabase**:
+  - Implementado pull de perfiles de usuario desde Supabase (`profiles` table) a la base de datos local Dexie (`db.users`) durante la sincronización inicial (`initialSync` en `SyncContext`).
+  - Corregido error donde la creación de nuevos usuarios o edición de existentes no se guardaba/sincronizaba en la nube si ya existían o si se editaban.
+  - Modificado el endpoint `/api/admin/users` para permitir operaciones de actualización/upsert de perfiles y contraseñas.
+  - Actualizada la política RLS de la tabla `profiles` para lectura pública para todos los usuarios autenticados, permitiendo que docentes y estudiantes vean nombres/perfiles.
+- **Gestión de Permisos de Docentes**:
+  - Agregada columna `can_create_users` a perfiles en Supabase e IndexedDB.
+  - Habilitada interfaz en `UserManager` para que los administradores concedan permisos a docentes seleccionados.
+  - Permitido a docentes autorizados registrar nuevos usuarios (uno a uno o masivos) pero restringida la edición/eliminación.
+  - Adaptada la barra lateral (`Sidebar.tsx`) y ruta guardada (`page.tsx`) para permitir el acceso a docentes con el permiso.
 
 ### Sesión 1 - Mayo 2026
 - Inicio del proyecto
@@ -189,29 +241,34 @@ SIM 1/
 - Activado de manera global el modo `caveman` en las reglas de sistema.
 - Instalada la skill `ui-ux-pro-max` (herramienta de diseño e interfaz con soporte nativo para Antigravity) de forma global.
 
-### Sesión 13 - Junio 2026 (sesión actual)
-- **Despliegue en Vercel + GitHub**:
-  - Inicializado repositorio Git y subido a GitHub (rarz1/sim-comex)
-  - Instalado GitHub CLI (gh) para autenticación
-  - Configurado .gitignore para excluir .env* y napkin embebido
-  - Desplegado en Vercel (plan Hobby) con variables de entorno de Supabase real
-  - App accesible públicamente para pruebas externas
-- **Fix login en producción**: El admin no existía en Supabase Auth del proyecto cloud. Creado usuario admin@test.com manualmente desde Authentication > Users con password 123456. Asignado rol 'admin' vía UPDATE en tabla profiles via SQL Editor.
-- Errores: La tabla es `profiles` (plural), no `profile`. Warning "destructive operations" es normal, solo un safety check de Supabase.
-- **Nueva funcionalidad: creación de usuarios desde el panel admin con sync a Supabase Auth**:
-  - Creado `lib/supabase/admin.ts`: cliente Supabase con service_role key para operaciones admin
-  - Creado `app/api/admin/users/route.ts`: API route POST que crea usuarios en Auth + profiles
-  - Modificado `UserManager.tsx`: agregado campo de contraseña, sincronización con Auth al guardar
-  - Carga masiva: agrega campo "Contraseña por defecto", sincroniza todos los usuarios con Auth
-  - Agregada `SUPABASE_SERVICE_ROLE_KEY` a env vars (local + Vercel)
-- **Fix API route usaba cliente browser en servidor**: Creado `lib/supabase/server.ts` con `createRouteHandlerClient()` que lee cookies de la request. Actualizado `route.ts` para usarlo.
-- **Fix email validation**: Agregado `trim().toLowerCase()` al email tanto en frontend como backend para evitar errores de formato en Supabase Auth.
-- **Alineación completa campos entre app, IndexedDB y Supabase**:
-  - Agregada columna `document_type` a tabla `profiles` en Supabase (SQL ejecutado)
-  - Actualizado `route.ts` para upsert `document_type` y `document_number`
-  - Actualizado `authService.ts` login sync para incluir todos los campos
-  - Guardado completo de `documentType`/`documentNumber` en IndexedDB al login
-- Errores: "Unable to validate email address: invalid format" por falta de trim/lowercase. "No autorizado" en API route por usar browser client en servidor (cookies no leídas).
+### Sesión 14 - Junio 2026
+- **Reorganización de estructura del proyecto**:
+  - Movido `components/sync/SyncContext.tsx` → `lib/contexts/SyncContext.tsx` (es un contexto, no componente UI)
+  - Movido `components/theme-provider.tsx` → `components/layout/theme-provider.tsx`
+  - Movido `components/document-renderer/FormRenderer.tsx` y `FormVisualizer.tsx` → `components/form-builder/` (consolidación con constructor de formularios)
+  - Movido `lib/data/defaultCatalogs.ts` → `lib/defaultCatalogs.ts` (eliminada carpeta `lib/data/`)
+  - Eliminados directorios vacíos: `features/`, `components/offline/`
+  - Eliminada carpeta `components/sync/` y `components/document-renderer/`
+  - Actualizados todos los imports (4 archivos): `app/layout.tsx`, `Header.tsx`, `TeacherDocumentViewer.tsx`, `student/documents/[id]/page.tsx`
+- **Verificación**: `tsc --noEmit` pasa con 0 errores. Lint pre-existing sin cambios nuevos.
+- Pendientes: `lib/db/db.ts` tiene 27 imports → se deja quieto por ahora (alto riesgo de cambios).
+
+### Sesión 15 - Junio 2026
+- **Catálogos: Nuevo tipo de 3 columnas**:
+  - Agregado selector de tipo (Simple, Dos Columnas, Tres Columnas) al crear catálogo nuevo
+  - Actualizado `lib/db/db.ts`: tipo `three_column` agregado a la unión de tipos
+  - Renderizado condicional de columnas según tipo (simple: 1 col, two_column: 2 cols, three_column: 3 cols)
+  - Catálogos se ordenan alfabéticamente automáticamente
+  - Bulk add adaptado para formato de 3 columnas (Etiqueta;Valor;Valor2)
+  - Tipo visible en el accordion header del catálogo
+- **Módulos: Función de duplicar/copiar**:
+  - Agregado botón `Copy` en la tabla de módulos (visible al hover)
+  - `handleDuplicate()`: copia todo el contenido (título, descripción, secciones, recursos, documentos adjuntos)
+  - Lo que NO se copia: `teacherId`, `groupIds`, estudiantes/docentes asociados
+  - La copia se crea como "borrador" con nuevo ID y "(Copia)" en el título
+  - Sincronización inmediata con la nube (`pushModule`)
+  - Toast de confirmación al duplicar
+- **Build**: `tsc --noEmit` pasa con 0 errores
 
 ### Sesión 12 - Junio 2026
 - **Ajustes finales landing page** (múltiples iteraciones con feedback del usuario):
@@ -230,6 +287,78 @@ SIM 1/
   - AccessSection: nuevo texto sobre seguridad/gestion documental personalizada, fondo más opaco (`/70 /60 /70`), botón menos alto (`h-14 md:h-16`).
   - Secciones 2 y 4 sincronizadas en transparencia.
 - **Build exitoso** en todas las iteraciones.
+
+### Sesión 19 - Junio 2026
+- **TipTap rich text editor**: Instalados `@tiptap/*` packages y `@tailwindcss/typography`.
+  - `components/admin/RichTextEditor.tsx`: WYSIWYG toolbar (bold, italic, underline, H1/H2/H3, lists, alignment, image insert, undo/redo).
+  - `ModuleEditor.tsx`: Reemplazado `<Textarea>` por `<RichTextEditor>` para contenido de secciones.
+  - Student `groups/[id]/page.tsx`: Documentos renderizados dentro de cada sección (no en card separada). Imágenes/videos inline como `<img>`/`<video>`.
+  - Teacher `groups/[id]/page.tsx`: Cambiado `whitespace-pre-wrap` a `dangerouslySetInnerHTML` + `prose` classes.
+  - `globals.css`: Agregado `@plugin "@tailwindcss/typography"`.
+- **Fix `record "new" has no field "updated_at"`**: Supabase `groups` table requiere `ALTER TABLE groups ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();`.
+
+### Sesión 18 - Junio 2026
+- **Fix persistencia de miembros de grupo al recargar**: 
+  - `pullGroups()` y `pullModules()` ahora preservan `members`/`sections` locales cuando cloud data está vacía (merge defensivo).
+  - `SyncContext.tsx`: `pushAllGroups()` ejecutado antes de `pullGroups()` en `initialSync()` para evitar pérdida de miembros locales.
+
+### Sesión 17 - Junio 2026
+- **Fix data loss en pull methods**: Varios métodos `pull*()` en `dbService.ts` hacían `clear()` incondicional antes de verificar datos cloud. Corregidos para preservar datos locales si Supabase está vacío.
+
+### Sesión 22 (final) - Junio 2026
+- **Fix login congelado definitivo**: Creado `app/api/auth/login/route.ts` (proxy server-side a Supabase Auth). `authService.login()` reemplazado por fetch directo a `/api/auth/login` desde LoginForm. Setea cookie de sesión Supabase server-side con formato `base64-<base64_json>` que `@supabase/ssr` puede leer.
+- **Fix logout congelado**: Creado `app/api/auth/logout/route.ts` para signOut server-side. Logout page usa fetch a esta API route.
+- **Fix race condition en useAuth**: Eliminada subscripción `onAuthStateChange` que causaba `setUser(null)` antes de que `getCurrentUser()` completara, resultando en redirect a login por `RoleGuard`.
+- **Fix `hasValidSession()`**: Ahora retorna true si hay cached profile (aunque cookie de sesión no sea legible por browser). `getConnectionStatus()` simplificado a `'cloud'` si `hasValidSession()` o `'local'` si no.
+- **Fix sync bloqueado por browser**: Creado `app/api/sync/pull/route.ts` que usa `createAdminClient()` (service role key) para hacer fetch de TODAS las tablas desde Supabase sin bloqueos del browser.
+- **SyncContext.initialSync()**: Reemplazadas las llamadas directas a `dbService.pull*()` (que usan supabase client en browser y fallan) por un solo fetch a `/api/sync/pull` que escribe todo en IndexedDB.
+- **Nuevos archivos**: `app/api/auth/login/route.ts`, `app/api/auth/logout/route.ts`, `app/api/sync/pull/route.ts`
+- **Archivos modificados**: `hooks/useAuth.ts` (eliminada subscripción onAuthStateChange), `lib/contexts/SyncContext.tsx` (initialSync usa API proxy), `lib/services/authService.ts` (hasValidSession con fallback a cached profile), `components/auth/LoginForm.tsx` (fetch directo + role resolution), `app/(auth)/logout/page.tsx` (usa fetch API)
+- **Causa raíz**: Browser/Windows bloquea requests directos a `supabase.co`. Solución: proxy server-side via API routes de Next.js.
+- Pendientes: push operations también necesitan API routes proxy para crear/actualizar datos en Supabase.
+
+### Sesión 22 - Junio 2026
+- **Fix login congelado (no response, CSP/firewall de Windows bloquea Supabase Auth)**:
+  - Diagnóstico: Login se quedaba en "Conectando..." sin error. Confirmado que browser (Chrome/Edge) no puede hacer fetch directo a `supabase.co/auth/v1/token` aunque CORS esté configurado y curl funcione. Probablemente Windows Defender Network Protection o firewall corporativo bloquea el request.
+  - Creado `app/api/auth/login/route.ts`: API route server-side que recibe `{ email, password }` del browser, llama a `createRouteHandlerClient` → `supabase.auth.signInWithPassword()`, y devuelve `{ user, access_token, refresh_token }` al cliente. Las cookies de sesión se setean via `setAll` del handler.
+  - `authService.login()` refactorizado: ahora hace POST a `/api/auth/login` (mismo origen, sin restricciones de CSP/CORS) en vez de fetch directo a Supabase Auth. El `Promise.race` con timeout de 20s maneja el caso de servidor caído.
+  - Sesión inyectada al cliente Supabase via `setSession()` para que REST calls (profiles, etc.) funcionen.
+- Errores: Login se congelaba porque el browser/Windows bloqueaba el request a Supabase Auth. El `AbortSignal.timeout` no funcionaba en ese contexto. Solución: proxy server-side.
+- Pendientes: Migrar también `getCurrentUser()` y `getSession()` a API routes server-side para evitar el bloqueo también en carga inicial.
+
+### Sesión 21 - Junio 2026
+- **Fix arquitectura de sync: los datos ahora sí llegan a Supabase**:
+  - **Problema original**: `getCurrentUser()` retorna perfil cacheado (`cached_user_profile` en localStorage) aunque la sesión real de Supabase haya expirado. `SyncContext` ve un `user` truthy e inicia sync, pero los `push*()` y `pull*()` fallan con error `{}` (sin sesión Supabase). Los datos quedan solo en IndexedDB.
+  - **`authService.hasValidSession()`**: Nueva función que verifica `supabase.auth.getSession()`.
+  - **`authService.getConnectionStatus()`**: Retorna `'cloud' | 'local' | 'mock'` según el estado real de la sesión.
+  - **Guard en todos los `push*()` y `delete*Cloud()`**: `pushGroup`, `pushModule`, `pushTemplate`, `pushExerciseFolder`, `pushExercise`, `pushExerciseAssignment`, `pushCatalogs`, `pushAllGroups` y todos los `delete*Cloud` — ahora verifican `hasValidSession()` antes de intentar la operación. Si no hay sesión, skip con `console.warn` en vez de fallar con `{}`.
+  - **Guard en `pullCatalogs()`**: Faltaba el guard de sesión y además hacía `throw error` (cortaba todo el `initialSync`). Cambiado a `console.error + return` como los demás pull.
+  - **`getCurrentUser()` ahora intenta refresh de sesión**: Cuando hay cached profile pero no session, llama a `supabase.auth.refreshSession()` antes de caer en modo local. Esto permite recuperación automática de sesiones expiradas.
+  - **Indicador visual en Header**: Muestra badge "Cloud" (verde) o "Local" (ámbar) según `connectionStatus`, spin durante sync, contador de cambios pendientes.
+  - **Banner flotante "Modo local"**: Aparece en la esquina inferior derecha cuando no hay sesión, con botón "Reintentar".
+  - **Sesión refrescada periódicamente**: Cada 30s se verifica `getConnectionStatus()`.
+  - **`pullCatalogs`**: Arreglado `throw error` que cortaba todo el `initialSync` — ahora log + return como los demás.
+- **`syncAll()` en SyncContext**: Nuevo método de sincronización bidireccional completa:
+  - Push: grupos, módulos, templates, exercise folders, exercises, assignments, catálogos
+  - Pull: catálogos, usuarios, grupos, módulos, templates, exercise folders, exercises, assignments
+  - No lanza error si un push individual falla (`.catch(() => {})`)
+- **Timer periódico cada 5 minutos**: Llama `syncAll()` automáticamente para mantener datos frescos sin intervención.
+- **Botón "Sincronizar" en admin dashboard**: Al lado del botón "Diseñador de Documentos". Muestra spinner durante sync, icono Cloud (verde) o CloudOff (ámbar) según estado. Se deshabilita si está en modo local.
+- **`tsc --noEmit`**: Pasa sin errores.
+- Pendientes: `supabase_migration.sql` desactualizada (columnas viejas `exercise_id`, `teacher_id`). Si se ejecuta desde 0, `d.case_id` fallará.
+
+### Sesión 20 - Junio 2026
+- **Rediseño completo del Exercise Bank** como repositorio compartido de casos PDF:
+  - `types/exercises.ts`: Reemplazados `ExerciseFolder`/`Exercise`/`ExerciseAssignment` por `CaseFolder`/`CaseItem`/`CaseAssignment`.
+  - `lib/db/db.ts`: Dexie version 16, nuevas tablas `caseFolders`/`cases`/`caseAssignments` con `caseId` index. Upgrade handler limpia datos viejos.
+  - `components/teacher/ExerciseBank.tsx`: UI renovada con vista de repositorio (grilla de carpetas) y vista de detalle de carpeta con selector de grupo, dos listas (casos/estudiantes), subida inline de PDF como base64 data URL, y flujo de asignación. Admite `isAdmin` prop.
+  - `app/(dashboard)/dashboard/admin/exercises/page.tsx`: Nueva ruta admin que wrappea `ExerciseBank` con `isAdmin`.
+  - `app/(dashboard)/dashboard/student/cases/page.tsx`: Nueva ruta estudiante que muestra casos asignados con visor PDF embebido, estado de asignación, badge de compañeros asignados al mismo caso.
+  - `components/layout/Sidebar.tsx`: Agregados links "Banco Ejercicios" (admin) y "Mis Casos" (student).
+  - `lib/appTexts.ts`: Agregadas claves `common.sidebar.admin_exercises` y `common.sidebar.student_cases`.
+  - `lib/services/dbService.ts`: Actualizados métodos `pullExerciseFolders`, `pushExerciseFolder`, `pullExercises`, `pushExercise`, `pullExerciseAssignments`, `pushExerciseAssignment` y sus `deleteCloud` hermanos para usar `CaseFolder`/`CaseItem`/`CaseAssignment` (sin `teacherId`, `moduleIds`, `groupIds`, `moduleId`, `dueDate`; renombrado `exerciseId` → `caseId`).
+  - `app/(dashboard)/dashboard/student/groups/[id]/page.tsx`: Actualizado para usar `caseId` en assignments y mostrar `content` como objeto con soporte PDF.
+- **Build exitoso**: `tsc --noEmit` sin errores.
 
 ### Sesión 11 - Junio 2026
 - **Rediseño completo de la landing page** con diseño premium editorial/trade:
@@ -319,6 +448,113 @@ SIM 1/
 - **Auto-generación de Tag ID**: En `Sidebar.tsx`, el `tagId` se genera automáticamente a partir de las 3 primeras letras de cada palabra del nombre del campo, separadas por guión.
 - **Validación de duplicados**: Implementada detección de nombres repetidos dentro del mismo documento y validación cruzada de Tag ID entre otros documentos (con alertas visuales).
 - **Modo Caveman activado**: Configurado permanentemente para todas las sesiones futuras. Respuestas siempre en español.
+
+### Sesión 23 - Junio 2026
+- **Banco de Ejercicios: Repositorio + Espacio Personal**:
+  - `types/exercises.ts`: Agregados campos `space: 'repository' | 'personal'` y `ownerId: string | null` a `CaseFolder` y `CaseItem`.
+  - `lib/db/db.ts`: Dexie version 17 con nuevos índices `space`, `ownerId`, `[space+ownerId]` y upgrade handler que migra datos existentes sin pérdida.
+  - `lib/services/dbService.ts`: Pull methods ahora preservan items personales (solo limpian `space: 'repository'`). Push/delete de items personales se omiten del cloud sync.
+  - **Admin** (`/dashboard/admin/exercises`): Vista completa del repositorio con CRUD (crear, editar, eliminar carpetas/casos). Sin cambios visuales respecto a la versión anterior.
+  - **Teacher** (`/dashboard/teacher/library`): Nueva interfaz con dos tabs:
+    - **Repositorio**: Vista de solo lectura. El teacher puede explorar carpetas, ver casos y copiarlos a su espacio personal mediante botón "Copiar a Mi Espacio" que despliega selector de carpeta destino.
+    - **Mi Espacio**: CRUD completo sobre sus propias carpetas y casos (crear, editar, eliminar, subir PDF, asignar a estudiantes). Filtrando por `space: 'personal'` y `ownerId: teacherId`.
+  - **Folder editing**: Nueva funcionalidad de editar carpetas (renombrar, cambiar descripción) disponible vía botón `Pencil` al hover en el grid y en la vista detalle.
+  - Solo visible para admin y teachers (students no ven estos links).
+- **Build**: `tsc --noEmit` pasa sin errores.
+- Errores: Ninguno.
+- Pendientes: Migrar `push*` ops a API routes proxy (ver Pendientes anteriores).
+
+### Sesión 24 - Junio 2026
+- **Student page: Casos dentro del card del módulo**:
+  - `student/groups/[id]/page.tsx`: Movida la sección "Casos de Estudio" (antes en Card separado) **dentro del mismo Card del módulo**, debajo de las secciones. Separada por `border-t`.
+  - Eliminado Card duplicado que quedó de la estructura anterior.
+- **Build**: `tsc --noEmit` pasa sin errores.
+- Errores: Ninguno.
+- Pendientes: N/A.
+
+### Sesión 27 - Julio 2026
+- **Migración masiva de IndexedDB (Dexie/useLiveQuery) a React Query hooks**:
+  - `admin/page.tsx`: Reemplazados 5 `useLiveQuery` con hooks.
+  - `CatalogManager.tsx`: `useLiveQuery` → `useCatalogs()`, escrituras migradas a mutations.
+  - `GroupManager.tsx`: 4 `useLiveQuery` reemplazados, escrituras a mutations.
+  - `ModuleEditor.tsx`, `UserManager.tsx`, `admin/modules/page.tsx`, `admin/builder/page.tsx`, `admin/settings/page.tsx`, `FormRenderer.tsx`, `Sidebar.tsx`, `hooks/useAppText.ts`.
+- Build: `tsc --noEmit` pasa (solo error pre-existente en API route).
+- Pendientes: Migrar student pages, profile page, FormDesigner. Migrar push ops a API routes proxy.
+
+### Sesión 28 - Julio 2026
+- **Migración student pages + profile de IndexedDB (Dexie/useLiveQuery) a React Query hooks**:
+  - `student/page.tsx`: `useGroups()`, `useModules()`, `useTemplates()`, `useUsers()`, `useDrafts()` reemplazan 5 `useLiveQuery`.
+  - `student/groups/page.tsx`: Misma migración. `myDbUser` field names actualizados a `UserProfile` (`id`/`fullName`).
+  - `student/groups/[id]/page.tsx`: `useGroup()`, `useModule()` (con `enabled` automático), `useTemplates()` + `useMemo` para filtrar templates por módulo/adjuntos. `useDrafts()` con filtro `{ userId, groupId }`. `useExerciseAssignments()` y `useExercises()` + `useMemo` para filtrar casos asignados.
+  - `student/documents/page.tsx`: 5 hooks reemplazan `useLiveQuery`.
+  - `student/documents/[id]/page.tsx`: `useTemplate(templateId)` reemplaza `db.templates.get()`.
+  - `student/cases/page.tsx`: `useExercises()`, `useExerciseAssignments()`, `useUsers()`, `useExerciseFolders()`.
+  - `student/reports/page.tsx`: Eliminado `dbService.getGroups/getUsers` del useEffect. `useGroups()`, `useModules()`, `useUsers()` con `useMemo` para derivar `myGroups` y `teacherName`. Eliminado `loading` state (usa `isLoading` del hook).
+  - `profile/page.tsx`: `useGroups()`, `useDrafts()` reemplazan `useLiveQuery`.
+- Errores: `UserProfile` type mismatch (`id`/`fullName` vs `userId`/`name`). Misma solución que Sesión 27: callback params anotados con `: any`. Pre-existing errors en `teacher/` pages y `ExerciseBank.tsx` persisten sin cambios.
+- Build: `tsc --noEmit` pasa con 0 errores nuevos (30 pre-existing sin cambios).
+- Pendientes: Migrar `FormDesigner.tsx` (aún usa `dbService`). Migrar push ops a API routes proxy.
+
+### Sesión 27 - Julio 2026
+- **Página de migración de datos**: Creada `/dashboard/admin/migrate` con mapeo campo-por-campo (camelCase IndexedDB → snake_case Supabase) para migrar datos locales a la nube.
+- **Fix reportes admin/teacher**: Corregido `teacher.userId` → `teacher.id` y `teacher.name` → `teacher.fullName` por cambio a UserProfile.
+- **Fix Sidebar**: Reemplazado link "Exportar / Importar" por "Migrar a Nube" → `/dashboard/admin/migrate`.
+- **Fix authService**: Removidas todas las dependencias de IndexedDB. Eliminado el fallback de resolución de rol desde Dexie.
+- **Limpieza**: Eliminados archivos `db.ts`, `SyncContext.tsx`, `dbService.ts`, `export/page.tsx`. Desinstalados `dexie` y `dexie-react-hooks`.
+- **Build**: `tsc --noEmit` y `next build` pasan sin errores.
+
+### Sesión 26 - Julio 2026
+- **REFACTOR COMPLETO: Eliminada dependencia de IndexedDB. Arquitectura Supabase-first**:
+  - **Creado** `app/api/data/[table]/route.ts`: API route genérica CRUD (GET/POST/DELETE) que usa `createAdminClient()` (service_role_key) para todas las tablas.
+  - **Creado** `lib/services/dataService.ts`: Cliente fetch tipado que reemplaza `dbService.ts`.
+  - **Creado** `hooks/useData.ts`: 19 hooks de React Query (useGroups, useModules, useDrafts, useCatalogs, useExercises, etc.) con mutations que invalidan cache automáticamente.
+  - **Creado** `app/providers.tsx`: QueryClientProvider con staleTime 30s.
+  - **Creado** `types/index.ts`: Barrel file con todos los tipos, incluyendo `Draft` (antes en `db.ts`).
+  - **Creado** `app/(dashboard)/dashboard/admin/migrate/page.tsx`: Página de migración única que lee datos del viejo IndexedDB (Dexie) via API nativa y los envía a Supabase via dataService.
+  - **Migrados ~22 archivos**: admin (dashboard, CatalogManager, GroupManager, ModuleEditor, UserManager, builder, modules, settings), teacher (dashboard, groups, ExerciseBank, TeacherDocumentViewer, reports), student (dashboard, groups, documents, cases, reports), profile, FormRenderer, Sidebar, FormDesigner, Header, validationService, useAppText.
+  - **Auth**: Removidas todas las referencias a IndexedDB en authService. Login usa cached profile (localStorage) + API routes.
+  - **Eliminados**: `lib/db/db.ts`, `lib/contexts/SyncContext.tsx`, `lib/services/dbService.ts`, `app/(dashboard)/dashboard/admin/export/page.tsx`.
+  - **Dependencias eliminadas**: `dexie`, `dexie-react-hooks` (npm uninstall).
+  - **Sync removido**: Eliminado SyncProvider del layout, botón Sync del header/dashboard, indicadores de estado cloud/local.
+- **Build**: `tsc --noEmit` + `next build` pasan sin errores.
+- Errores: Ninguno.
+- Pendientes: Migrar datos de localhost+Vercel a Supabase usando `/dashboard/admin/migrate`.
+
+### Sesión 25 - Junio 2026
+- **Fix `case_id` column not found**: `exercise_assignments` en Supabase tenía `exercise_id` (schema viejo). El push enviaba `case_id` y fallaba.
+  - `dbService.ts`: push envía `exercise_id` + pull lee `d.case_id ?? d.exercise_id` (compatible ambos schemas).
+  - `pullExercises()`: maneja `content` como string (viejo) u objeto (nuevo).
+  - `supabase_migration_fix_case_id.sql`: migración para renombrar `exercise_id` → `case_id`, drop `module_id`/`due_date`, y cambiar `content TEXT` → `JSONB`.
+  - `supabase_migration.sql`: actualizado con schema correcto.
+  - Después de migración: push/pull actualizados a solo `case_id`.
+- **Admin asigna casos**: `canAssign` cambiado de `currentTab === 'personal' && !isAdmin` a `isAdmin || currentTab === 'personal'`.
+- **Eliminar asignación**: Agregado botón ❌ en cada badge de estudiante asignado en ExerciseBank detail view. Función `removeAssignment()` que borra de IndexedDB y Supabase.
+- **Tarjetas sin scroll**: Student page cambiado de `overflow-x-auto` horizontal a `grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3` responsivo.
+- **Fix doble scrollbar**:
+  - Eliminados `max-h-[600px] overflow-y-auto` y `max-h-[400px] overflow-y-auto` del ExerciseBank (detail view).
+  - Eliminado `h-[calc(100vh-4rem)] overflow-y-auto` del admin builder page.
+- **Build**: `tsc --noEmit` pasa sin errores.
+- Errores: Migración falló inicialmente porque `content TEXT DEFAULT ''` no se castea a `jsonb`. Fix: drop default primero, `CASE WHEN content = '' THEN '{}'::jsonb ELSE content::jsonb END`, luego set default.
+- Pendientes: N/A.
+
+### Sesión 29 - Julio 2026
+- **IndexedDB (Dexie) migration completa**: Eliminados todos los accesos directos a `db.*`, `dbService.*`, y `SyncContext.*`.
+- **Archivos editados**:
+  - `FormDesigner.tsx`: `db.templates.put` + `dbService.pushTemplate` → `dataService.save('templates', ...)`
+  - `FormRenderer.tsx`: `db.drafts.where/add/update` → `useDrafts()` hook + `useCreateOrUpdateDraft()` mutation
+  - `Header.tsx`: Eliminado `useSync`, íconos de cloud/sync, badges de estado de conexión, contador de pending changes, spinner de syncing
+  - `validationService.ts`: `db.drafts.where` + `dbService.*` → `dataService.getAll/getById`
+  - `teacher/reports/page.tsx`: `dbService.getGroups/getGroupById/getModuleById/getUserByUserId` → `dataService.getAll/getById`
+  - `admin/reports/page.tsx`: Mismo patrón que teacher reports
+  - `UserManager.tsx`: `db.users.bulkDelete/where/update/add/delete` → `dataService.save/delete` + `queryClient.invalidateQueries`
+- **Archivos eliminados**:
+  - `app/(dashboard)/dashboard/admin/export/page.tsx` (obsolete export page)
+  - `lib/contexts/SyncContext.tsx` (obsolete sync engine)
+  - `lib/services/dbService.ts` (replaced by dataService.ts)
+  - `lib/db/db.ts` (Dexie schema — Draft type already in types/index.ts)
+- **Build**: `tsc --noEmit` pasa. 30 errors pre-existentes sin cambios (UserProfile type mismatch, API route type).
+- Errores nuevos: 0.
+- Pendientes: Migrar push ops a API routes proxy (pre-existing).
 
 ---
 

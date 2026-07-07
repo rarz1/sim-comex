@@ -1,23 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/db";
-import { dbService } from "@/lib/services/dbService";
+import { useModules, useUsers, useCreateOrUpdateModule, useDeleteModule } from "@/hooks/useData";
 import { Module } from "@/types/modules";
 import { ModuleEditor } from "@/components/admin/ModuleEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, BookOpen, Trash2, FileText } from "lucide-react";
+import { Plus, BookOpen, Trash2, FileText, Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 
 export default function ModulesPage() {
     const [isEditing, setIsEditing] = useState(false);
     const [selectedModuleId, setSelectedModuleId] = useState<string | undefined>(undefined);
 
-    const modules = useLiveQuery(() => db.modules.toArray());
-    const allUsers = useLiveQuery(() => db.users.toArray());
+    const { data: modules } = useModules();
+    const { data: allUsers } = useUsers();
+    const createOrUpdateModule = useCreateOrUpdateModule();
+    const deleteModule = useDeleteModule();
 
     const handleCreate = () => {
         setSelectedModuleId(undefined);
@@ -31,9 +32,27 @@ export default function ModulesPage() {
 
     const handleDelete = async (id: string) => {
         if (confirm("¿Estás seguro de eliminar este módulo?")) {
-            await db.modules.delete(id);
-            await dbService.deleteModuleCloud(id);
+            deleteModule.mutate(id);
         }
+    };
+
+    const handleDuplicate = async (original: Module) => {
+        const copy: Module = {
+            ...original,
+            id: crypto.randomUUID(),
+            title: `${original.title} (Copia)`,
+            teacherId: "",
+            groupIds: [],
+            sections: original.sections.map(s => ({
+                ...s,
+                id: crypto.randomUUID(),
+            })),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            status: 'draft',
+        };
+        await createOrUpdateModule.mutateAsync(copy);
+        toast.success(`Módulo duplicado como "${copy.title}"`);
     };
 
     if (isEditing) {
@@ -107,6 +126,15 @@ export default function ModulesPage() {
                                         </Badge>
                                     </TableCell>
                                     <TableCell className="text-right">
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={(e) => { e.stopPropagation(); handleDuplicate(module); }}
+                                            className="h-8 w-8 text-muted-foreground hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
+                                            title="Duplicar módulo"
+                                        >
+                                            <Copy className="w-4 h-4" />
+                                        </Button>
                                         <Button
                                             variant="ghost"
                                             size="icon"

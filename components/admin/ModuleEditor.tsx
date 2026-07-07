@@ -11,9 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Trash2, Save, FileText, Image as ImageIcon, Video, Link as LinkIcon, Upload } from "lucide-react";
-import { db } from "@/lib/db/db";
-import { dbService } from "@/lib/services/dbService";
-import { useLiveQuery } from "dexie-react-hooks";
+import { useTemplates, useModule, useCreateOrUpdateModule } from "@/hooks/useData";
+import { RichTextEditor } from "./RichTextEditor";
 
 interface ModuleEditorProps {
     moduleId?: string;
@@ -35,23 +34,21 @@ export function ModuleEditor({ moduleId, onSave, onCancel }: ModuleEditorProps) 
         status: 'draft'
     });
 
+    const createOrUpdateModule = useCreateOrUpdateModule();
+
     // Data Loaders
-    const templates = useLiveQuery(() => db.templates.toArray());
+    const { data: templates } = useTemplates();
+    const { data: fetchedModule } = useModule(moduleId);
 
     useEffect(() => {
-        if (moduleId) {
-            db.modules.get(moduleId).then(m => {
-                if (m) {
-                    // Normalization: Ensure new fields exist
-                    setModule({
-                        ...m,
-                        sections: m.sections || [],
-                        groupIds: m.groupIds || []
-                    });
-                }
+        if (fetchedModule) {
+            setModule({
+                ...fetchedModule,
+                sections: fetchedModule.sections || [],
+                groupIds: fetchedModule.groupIds || []
             });
         }
-    }, [moduleId]);
+    }, [fetchedModule]);
 
     // Handlers
     const handleSave = async () => {
@@ -59,8 +56,7 @@ export function ModuleEditor({ moduleId, onSave, onCancel }: ModuleEditorProps) 
             alert("El título es obligatorio");
             return;
         }
-        await db.modules.put(module);
-        await dbService.pushModule(module);
+        await createOrUpdateModule.mutateAsync(module);
         window.scrollTo({ top: 0, behavior: 'instant' });
         onSave();
     };
@@ -195,7 +191,7 @@ export function ModuleEditor({ moduleId, onSave, onCancel }: ModuleEditorProps) 
                             </div>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            {/* Rich Text Area */}
+                            {/* Rich Text Area with TipTap */}
                             <div>
                                 <div className="flex items-center justify-between mb-2">
                                     <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Contenido (Texto, Explicación)</Label>
@@ -214,11 +210,11 @@ export function ModuleEditor({ moduleId, onSave, onCancel }: ModuleEditorProps) 
                                         </label>
                                     </div>
                                 </div>
-                                <Textarea
+                                <RichTextEditor
                                     value={section.content}
-                                    onChange={(e) => updateSection(section.id, { content: e.target.value })}
-                                    className="min-h-[120px]"
+                                    onChange={(html) => updateSection(section.id, { content: html })}
                                     placeholder="Escribe aquí el contenido teórico de la sección..."
+                                    minHeight="200px"
                                 />
 
                                 {/* Inline media preview — centered */}

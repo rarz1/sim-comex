@@ -41,7 +41,8 @@ const navItems: NavItem[] = [
     { id: "common.sidebar.users", title: "Usuarios", href: "/dashboard/admin/users", icon: UserCog, roles: ["admin"] },
     { id: "common.sidebar.modules", title: "Módulos", href: "/dashboard/admin/modules", icon: BookOpen, roles: ["admin"] },
     { id: "common.sidebar.catalogs", title: "Catálogos", href: "/dashboard/admin/catalogs", icon: Database, roles: ["admin"] },
-    { id: "common.sidebar.export", title: "Exportar / Importar", href: "/dashboard/admin/export", icon: HardDriveDownload, roles: ["admin"] },
+    { id: "common.sidebar.admin_exercises", title: "Banco Ejercicios", href: "/dashboard/admin/exercises", icon: BookOpen, roles: ["admin"] },
+    { id: "common.sidebar.migrate", title: "Migrar a Nube", href: "/dashboard/admin/migrate", icon: HardDriveDownload, roles: ["admin"] },
 
     // Teacher Routes
     { id: "common.sidebar.teacher_panel", title: "Panel Control", href: "/dashboard/teacher", icon: LayoutDashboard, roles: ["teacher"] },
@@ -53,6 +54,7 @@ const navItems: NavItem[] = [
     { id: "common.sidebar.student_panel", title: "Panel Control", href: "/dashboard/student", icon: LayoutDashboard, roles: ["student"] },
     { id: "common.sidebar.student_groups", title: "Mis Grupos", href: "/dashboard/student/groups", icon: Users, roles: ["student"] },
     { id: "common.sidebar.student_docs", title: "Mis Documentos", href: "/dashboard/student/documents", icon: FileText, roles: ["student"] },
+    { id: "common.sidebar.student_cases", title: "Mis Casos", href: "/dashboard/student/cases", icon: FileText, roles: ["student"] },
     { id: "common.sidebar.reports", title: "Reportes", href: "/dashboard/student/reports", icon: BarChart, roles: ["student"] },
 
     // Shared
@@ -68,7 +70,12 @@ export function Sidebar({ className }: SidebarProps) {
     if (user === undefined && !loading) return null;
 
     // Filter items.
-    const filteredItems = user ? navItems.filter(item => item.roles.includes(user.role)) : [];
+    const filteredItems = user ? navItems.filter(item => {
+        if (item.href === "/dashboard/admin/users") {
+            return user.role === 'admin' || (user.role === 'teacher' && !!user.canCreateUsers);
+        }
+        return item.roles.includes(user.role);
+    }) : [];
 
     return (
         <div className={cn("pb-12 w-64 border-r bg-sidebar h-[calc(100vh-3.5rem)] flex flex-col", className)}>

@@ -3,9 +3,7 @@
 import { useState, useEffect } from "react";
 import { FormDesigner } from "@/components/form-builder/FormDesigner";
 import { DocumentTemplate } from "@/types/form";
-import { db } from "@/lib/db/db";
-import { dbService } from "@/lib/services/dbService";
-import { useLiveQuery } from "dexie-react-hooks";
+import { useTemplates, useDeleteTemplate } from "@/hooks/useData";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -18,8 +16,8 @@ export default function BuilderPage() {
     const [isEditing, setIsEditing] = useState(false);
     const [selectedTemplate, setSelectedTemplate] = useState<DocumentTemplate | null>(null);
 
-    // Live query to fetch existing templates
-    const templates = useLiveQuery(() => db.templates.toArray());
+    const { data: templates } = useTemplates();
+    const deleteTemplate = useDeleteTemplate();
 
     const handleCreateNew = () => {
         // Reset selected template or create default empty
@@ -34,8 +32,7 @@ export default function BuilderPage() {
 
     const handleDelete = async (id: string) => {
         if (confirm("¿Estás seguro de eliminar esta plantilla?")) {
-            await db.templates.delete(id);
-            await dbService.deleteTemplateCloud(id);
+            deleteTemplate.mutate(id);
         }
     };
 
@@ -59,7 +56,7 @@ export default function BuilderPage() {
     }
 
     return (
-        <div className="p-6 space-y-6 max-w-7xl mx-auto h-[calc(100vh-4rem)] overflow-y-auto overflow-x-hidden">
+        <div className="p-6 space-y-6 max-w-7xl mx-auto">
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Constructor de Documentos</h1>

@@ -1,7 +1,8 @@
-import { db } from '@/lib/db/db';
-import { dbService } from './dbService';
+import { dataService } from './dataService';
 import { DocumentTemplate, FormField } from '@/types/form';
 import { ValidationReport, ValidationDetail, FieldMatch } from '@/types/validation';
+import { Draft } from '@/types';
+import { Module } from '@/types/modules';
 
 export interface CrossDocumentMatch {
     docTitle: string;
@@ -21,14 +22,14 @@ export const validationService = {
         console.log(`🔍 ValidationService: getting data for Module ${moduleId} User ${userId} Group ${groupId || 'ALL'}`);
 
         // 1. Fetch Module to identify ALL linked documents (Owned + Attached)
-        const module = await dbService.getModuleById(moduleId);
+        const module = await dataService.getById<Module>('modules', moduleId);
         if (!module) {
             console.log("❌ Module not found");
             return {};
         }
 
         // 2. Owned Templates
-        const ownedTemplates = await dbService.getTemplatesByModule(moduleId);
+        const ownedTemplates = await dataService.getAll<DocumentTemplate>('templates', { moduleId });
 
         // 3. Attached Templates (Reference) - RE-ENGINEERED: Must include attached docs for reports to work
         const attachedIds = new Set<string>();
@@ -39,7 +40,8 @@ export const validationService = {
 
         let additionalTemplates: DocumentTemplate[] = [];
         if (missingIds.length > 0) {
-            additionalTemplates = await db.templates.where('id').anyOf(missingIds).toArray();
+            const allTemplates = await dataService.getAll<DocumentTemplate>('templates');
+            additionalTemplates = allTemplates.filter(t => missingIds.includes(t.id));
         }
 
         const templates = [...ownedTemplates, ...additionalTemplates];
@@ -47,22 +49,19 @@ export const validationService = {
 
         // 4. Fetch drafts for each template
         // Note: In DB, 'moduleId' column in drafts table actually stores the Template ID (legacy naming)
-        const drafts = [];
+        const drafts: Draft[] = [];
         for (const template of templates) {
-            // Retrieve drafts for this SPECIFIC template and GROUP
-            let templateDrafts = [];
+            let templateDrafts: Draft[] = [];
             if (groupId) {
-                // Retrieve drafts for this SPECIFIC template and GROUP
-                templateDrafts = await db.drafts.where({ moduleId: template.id, userId, groupId }).toArray();
+                templateDrafts = await dataService.getAll<Draft>('drafts', { moduleId: template.id, userId, groupId });
                 
                 // Fallback: If no group-specific draft found, try to find ANY draft for this user and template
-                // This helps with legacy data or data saved without a groupId
                 if (templateDrafts.length === 0) {
                     console.log(`   ! No draft found for group ${groupId}, checking fallback...`);
-                    templateDrafts = await db.drafts.where({ moduleId: template.id, userId }).toArray();
+                    templateDrafts = await dataService.getAll<Draft>('drafts', { moduleId: template.id, userId });
                 }
             } else {
-                templateDrafts = await dbService.getDraftsByModuleAndUser(template.id, userId);
+                templateDrafts = await dataService.getAll<Draft>('drafts', { moduleId: template.id, userId });
             }
             console.log(`   > Template ${template.id} (${template.title}): ${templateDrafts.length} drafts`);
             drafts.push(...templateDrafts);

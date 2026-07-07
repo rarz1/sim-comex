@@ -13,9 +13,8 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Menu, Moon, Sun, LogOut, Cloud, CloudOff, CloudUpload, RefreshCw } from "lucide-react";
+import { Menu, Moon, Sun, LogOut } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useSync } from "@/components/sync/SyncContext";
 import { useAppText } from "@/hooks/useAppText";
 
 interface HeaderProps {
@@ -25,7 +24,6 @@ interface HeaderProps {
 export function Header({ onMenuClick }: HeaderProps) {
     const { user } = useAuth();
     const { setTheme, theme } = useTheme();
-    const { isOnline, isSyncing, pendingChanges } = useSync();
     const { t } = useAppText();
 
     return (
@@ -48,7 +46,7 @@ export function Header({ onMenuClick }: HeaderProps) {
                     <div className="w-full flex-1 md:w-auto md:flex-none">
                         {/* Search could go here */}
                     </div>
-                    <nav className="flex items-center space-x-4">
+                    <nav className="flex items-center space-x-2">
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" className="h-12 px-3 rounded-2xl flex items-center gap-3 hover:bg-muted/50 transition-all border border-transparent hover:border-muted-foreground/10 group">

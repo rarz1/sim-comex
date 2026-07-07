@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   group_ids JSONB DEFAULT '[]'::jsonb,
   document_type TEXT CHECK (document_type IN ('CC', 'TI', 'CE', 'PASSPORT')),
   document_number TEXT,
+  can_create_users BOOLEAN DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -94,28 +95,24 @@ CREATE TABLE IF NOT EXISTS drafts (
 
 ALTER TABLE drafts ENABLE ROW LEVEL SECURITY;
 
--- 7. TABLA exercise_folders (carpetas de ejercicios)
+-- 7. TABLA exercise_folders (carpetas de casos)
 CREATE TABLE IF NOT EXISTS exercise_folders (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT DEFAULT '',
-  teacher_id TEXT,
-  module_ids JSONB DEFAULT '[]'::jsonb,
-  group_ids JSONB DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
 ALTER TABLE exercise_folders ENABLE ROW LEVEL SECURITY;
 
--- 8. TABLA exercises
+-- 8. TABLA exercises (casos)
 CREATE TABLE IF NOT EXISTS exercises (
   id TEXT PRIMARY KEY,
   folder_id TEXT,
   title TEXT NOT NULL,
   description TEXT DEFAULT '',
-  content TEXT DEFAULT '',
-  module_id TEXT,
+  content JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -125,13 +122,11 @@ ALTER TABLE exercises ENABLE ROW LEVEL SECURITY;
 -- 9. TABLA exercise_assignments
 CREATE TABLE IF NOT EXISTS exercise_assignments (
   id TEXT PRIMARY KEY,
-  exercise_id TEXT,
+  case_id TEXT,
   student_id TEXT,
   group_id TEXT,
-  module_id TEXT,
   assigned_by TEXT,
   assigned_at TIMESTAMPTZ DEFAULT now(),
-  due_date TEXT,
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed')),
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
@@ -152,8 +147,7 @@ CREATE INDEX IF NOT EXISTS idx_drafts_group ON drafts(group_id);
 CREATE INDEX IF NOT EXISTS idx_drafts_sync ON drafts(document_id, user_id, group_id);
 CREATE INDEX IF NOT EXISTS idx_exercises_folder ON exercises(folder_id);
 CREATE INDEX IF NOT EXISTS idx_exercise_assignments_student ON exercise_assignments(student_id);
-CREATE INDEX IF NOT EXISTS idx_exercise_assignments_exercise ON exercise_assignments(exercise_id);
-CREATE INDEX IF NOT EXISTS idx_exercise_folders_teacher ON exercise_folders(teacher_id);
+CREATE INDEX IF NOT EXISTS idx_exercise_assignments_case ON exercise_assignments(case_id);
 
 -- ============================================================
 -- TRIGGERS: updated_at automático
@@ -188,7 +182,7 @@ $$;
 -- profiles: cada usuario ve/edita su propio perfil; admins ven todo
 DROP POLICY IF EXISTS "Users view own profile" ON profiles;
 CREATE POLICY "Users view own profile" ON profiles
-  FOR SELECT USING (auth.uid() = id);
+  FOR SELECT USING (auth.role() = 'authenticated');
 
 DROP POLICY IF EXISTS "Users update own profile" ON profiles;
 CREATE POLICY "Users update own profile" ON profiles

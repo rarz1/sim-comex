@@ -6,8 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { FileText, Play, BookOpen, Clock, CheckCircle, ArrowRight, PenTool, Users } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/db";
+import { useGroups, useModules, useTemplates, useUsers, useDrafts } from "@/hooks/useData";
 import { useAppText } from "@/hooks/useAppText";
 import { cn, calculateDocumentProgress } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
@@ -17,23 +16,23 @@ export default function StudentDocumentsPage() {
     const { user } = useAuth();
 
     // 1. Fetch live data
-    const allGroups = useLiveQuery(() => db.groups.toArray());
-    const allModules = useLiveQuery(() => db.modules.toArray());
-    const allTemplates = useLiveQuery(() => db.templates.toArray());
-    const allUsers = useLiveQuery(() => db.users.toArray());
-    const myDrafts = useLiveQuery(() => user ? db.drafts.where({ userId: user.id }).toArray() : [], [user]);
+    const { data: allGroups } = useGroups();
+    const { data: allModules } = useModules();
+    const { data: allTemplates } = useTemplates();
+    const { data: allUsers } = useUsers() as any;
+    const { data: myDrafts } = useDrafts({ userId: user?.id || '' });
     const { t } = useAppText();
 
     // Find my userId from the database (matching by email or id from auth)
-    const myDbUser = allUsers?.find(u =>
-        u.userId === user?.id ||
+    const myDbUser = allUsers?.find((u: any) =>
+        u.id === user?.id ||
         u.email === user?.email ||
-        u.name === user?.fullName
+        u.fullName === user?.fullName
     );
 
     // 2. Identify my groups (Check both ID and Name for compatibility)
     const myGroups = allGroups?.filter(g =>
-        (g.members || []).includes(myDbUser?.userId || "") ||
+        (g.members || []).includes(myDbUser?.id || "") ||
         (g.members || []).includes(user?.id || "") ||
         (g.members || []).includes(user?.fullName || "")
     ) || [];

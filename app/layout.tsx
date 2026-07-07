@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Syne, DM_Sans } from "next/font/google";
 import "./globals.css";
-import { ThemeProvider } from "@/components/theme-provider";
-import { SyncProvider } from "@/components/sync/SyncContext";
+import { ThemeProvider } from "@/components/layout/theme-provider";
+import { Providers } from "@/app/providers";
 import { Toaster } from "@/components/ui/sonner";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 
@@ -42,9 +42,9 @@ export default function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
-            <SyncProvider>
+            <Providers>
               {children}
-            </SyncProvider>
+            </Providers>
             <Toaster />
           </ThemeProvider>
         </ErrorBoundary>

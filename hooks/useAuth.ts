@@ -8,30 +8,22 @@ export function useAuth() {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        let cancelled = false;
+
         const initAuth = async () => {
-            const currentUser = await authService.getCurrentUser();
-            setUser(currentUser);
-            setLoading(false);
+            try {
+                const currentUser = await authService.getCurrentUser();
+                if (!cancelled) setUser(currentUser);
+            } catch (e) {
+                console.error("useAuth: error getting current user", e);
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
         };
 
         initAuth();
 
-        // For Supabase, we still need the listener if not in mock mode
-        if (!authService.isMockEnabled()) {
-            const { createClient } = require('@/lib/supabase/client');
-            const supabase = createClient();
-            const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event: any, session: any) => {
-                if (session?.user) {
-                    const profile = await authService.getCurrentUser();
-                    setUser(profile);
-                } else {
-                    setUser(null);
-                }
-                setLoading(false);
-            });
-
-            return () => subscription.unsubscribe();
-        }
+        return () => { cancelled = true; };
     }, []);
 
     return { user, loading };

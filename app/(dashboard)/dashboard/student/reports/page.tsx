@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { dbService } from "@/lib/services/dbService";
+import { useGroups, useModules, useUsers } from "@/hooks/useData";
 import { validationService } from "@/lib/services/validationService";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -11,67 +11,43 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AlertCircle, BarChart, BookOpen, Calendar, Users, X, Printer, CheckCircle, XCircle, Settings, LogOut, Download } from "lucide-react";
 import { toast } from "sonner";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/db";
 import { useAppText } from "@/hooks/useAppText";
 import { cn } from "@/lib/utils";
 
 export default function StudentReportsPage() {
     const { user } = useAuth();
-    const [loading, setLoading] = useState(true);
-    const [groups, setGroups] = useState<any[]>([]);
     const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
     const [report, setReport] = useState<any | null>(null);
     const [generating, setGenerating] = useState(false);
-    const [teacherName, setTeacherName] = useState<string>("");
     const printRef = useRef<HTMLDivElement>(null);
 
-    const allModules = useLiveQuery(() => db.modules.toArray());
+    const { data: allModules } = useModules();
+    const { data: allGroupsData = [], isLoading: groupsLoading } = useGroups();
+    const { data: allUsers = [] } = useUsers();
     const { t } = useAppText();
 
-    // Load Student's Groups and find Teacher
-    useEffect(() => {
-        let isCancelled = false;
-        const loadInitialData = async () => {
-            if (!user) return;
-            try {
-                const [allGroups, allUsers] = await Promise.all([
-                    dbService.getGroups(),
-                    dbService.getUsers()
-                ]);
+    const myGroups = useMemo(() => {
+        if (!user) return [];
+        return allGroupsData.filter(g => {
+            const members = g.members || [];
+            const normalizedMembers = members.map(m => String(m).toLowerCase().trim());
+            return (
+                (user.id && normalizedMembers.includes(user.id.toLowerCase().trim())) ||
+                (user.email && normalizedMembers.includes(user.email.toLowerCase().trim())) ||
+                (user.fullName && normalizedMembers.includes(user.fullName.toLowerCase().trim()))
+            );
+        });
+    }, [user, allGroupsData]);
 
-                if (isCancelled) return;
+    const teacherName = useMemo(() => {
+        if (!selectedGroupId) return "";
+        const group = allGroupsData.find(g => g.id === selectedGroupId);
+        if (!group?.teacherId) return "";
+        const teacher = allUsers.find(u => u.id === group.teacherId);
+        return teacher?.fullName || "";
+    }, [selectedGroupId, allGroupsData, allUsers]);
 
-                // Identification logic similar to StudentGroupsPage for consistency
-                const myGroups = allGroups.filter(g => {
-                    const members = g.members || [];
-                    const normalizedMembers = members.map(m => String(m).toLowerCase().trim());
-
-                    return (
-                        (user.id && normalizedMembers.includes(user.id.toLowerCase().trim())) ||
-                        (user.email && normalizedMembers.includes(user.email.toLowerCase().trim())) ||
-                        (user.fullName && normalizedMembers.includes(user.fullName.toLowerCase().trim()))
-                    );
-                });
-                setGroups(myGroups);
-
-                // If a group is selected, find the teacher
-                if (selectedGroupId) {
-                    const group = allGroups.find(g => g.id === selectedGroupId);
-                    if (group && group.teacherId) {
-                        const teacher = allUsers.find(u => u.userId === group.teacherId || u.id === group.teacherId);
-                        if (teacher) setTeacherName(teacher.name || teacher.fullName || "");
-                    }
-                }
-            } catch (error) {
-                console.error("Error loading groups:", error);
-            } finally {
-                if (!isCancelled) setLoading(false);
-            }
-        };
-        loadInitialData();
-        return () => { isCancelled = true; };
-    }, [user, selectedGroupId]);
+    if (groupsLoading && !allGroupsData.length) return <div className="p-8">{t('common.loading', 'Cargando...')}</div>;
 
     // Generate Report when Group is selected
     useEffect(() => {
@@ -84,7 +60,7 @@ export default function StudentReportsPage() {
 
             setGenerating(true);
             try {
-                const group = groups.find(g => g.id === selectedGroupId);
+                const group = myGroups.find(g => g.id === selectedGroupId);
                 if (!group || !group.moduleId) {
                     if (!isCancelled) setReport(null);
                     return;
@@ -105,9 +81,9 @@ export default function StudentReportsPage() {
 
         generateReport();
         return () => { isCancelled = true; };
-    }, [selectedGroupId, user, groups, t]);
+    }, [selectedGroupId, user, myGroups, t]);
 
-    const selectedGroup = groups.find(g => g.id === selectedGroupId);
+    const selectedGroup = myGroups.find(g => g.id === selectedGroupId);
     const selectedModule = allModules?.find(m => m.id === selectedGroup?.moduleId);
 
     const formatDate = (dateStr: string) => {
@@ -177,7 +153,7 @@ export default function StudentReportsPage() {
         printWindow.print();
     };
 
-    if (loading) return <div className="p-8">{t('common.loading', 'Cargando...')}</div>;
+
 
     return (
         <div className="space-y-6">
@@ -189,7 +165,7 @@ export default function StudentReportsPage() {
                 <p className="text-muted-foreground">{t('student.reports.subtitle', 'Consulta la consistencia de los datos en tus simulaciones.')}</p>
             </div>
 
-            {groups.length === 0 ? (
+            {myGroups.length === 0 ? (
                 <Card>
                     <CardContent className="p-8 text-center text-muted-foreground">
                         <AlertCircle className="w-12 h-12 mx-auto mb-4 opacity-50" />
@@ -208,7 +184,7 @@ export default function StudentReportsPage() {
                                         <SelectValue placeholder={t('student.reports.select_group_placeholder', 'Seleccionar grupo...')} />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {groups.map(g => (
+                                        {myGroups.map(g => (
                                             <SelectItem key={g.id} value={g.id}>
                                                 {g.name}
                                             </SelectItem>

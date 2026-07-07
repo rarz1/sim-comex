@@ -1,39 +1,36 @@
-export interface ExerciseFolder {
+export interface CaseFolder {
     id: string;
     name: string;
-    description?: string;
-    teacherId: string;
-    moduleIds: string[];
-    groupIds: string[];
+    description: string;
+    space: 'repository' | 'personal';
+    ownerId: string | null;
     createdAt: string;
     updatedAt: string;
 }
 
-export interface Exercise {
+export interface CaseItem {
     id: string;
     folderId: string;
     title: string;
     description: string;
-    content: string;
-    moduleId?: string;
+    content: {
+        text: string;
+        pdfUrl?: string;
+        pdfName?: string;
+        pdfSize?: string;
+    };
+    space: 'repository' | 'personal';
+    ownerId: string | null;
     createdAt: string;
     updatedAt: string;
 }
 
-export interface ExerciseAssignment {
+export interface CaseAssignment {
     id: string;
-    exerciseId: string;
+    caseId: string;
     studentId: string;
     groupId: string;
-    moduleId: string;
     assignedBy: string;
     assignedAt: string;
-    dueDate?: string;
     status: 'pending' | 'in_progress' | 'completed';
-}
-
-export interface ExerciseWithAssignment {
-    exercise: Exercise;
-    assignedTo: string[];
-    isAssignedToStudent: (studentId: string) => boolean;
 }

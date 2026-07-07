@@ -1,7 +1,6 @@
 "use client";
 
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/db";
+import { useGroups, useUsers, useModules } from "@/hooks/useData";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { useAppText } from "@/hooks/useAppText";
@@ -14,27 +13,24 @@ import { Badge } from "@/components/ui/badge";
 export default function TeacherGroupsPage() {
     const { user } = useAuth();
 
-    // Fetch My Groups
-    const allGroups = useLiveQuery(() => db.groups.toArray());
-    const teachers = useLiveQuery(() => db.users.where('role').equals('teacher').toArray());
+    const { data: allGroups } = useGroups();
+    const { data: teachers } = useUsers({ role: 'teacher' });
+    const { data: modules } = useModules();
     const { t } = useAppText();
 
     // Find my userId from the database (matching by email or id from auth)
     const myDbUser = teachers?.find(u =>
-        u.userId === user?.id ||
+        u.id === user?.id ||
         u.email === user?.email ||
-        u.name === user?.fullName
+        u.fullName === user?.fullName
     );
 
     const myGroups = allGroups?.filter(g =>
-        g.teacherId === myDbUser?.userId ||
+        g.teacherId === myDbUser?.id ||
         g.teacherId === user?.id ||
         g.teacherId === user?.fullName ||
         g.teacherId === user?.email
     ) || [];
-
-    // Fetch Modules and Templates
-    const modules = useLiveQuery(() => db.modules.toArray());
 
     const getModuleName = (id?: string) => {
         return modules?.find(m => m.id === id)?.title || t('teacher.groups.no_module', 'Sin Módulo');

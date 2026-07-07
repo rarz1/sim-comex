@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/db";
+import { useState, useEffect } from "react";
+import { useUsers } from "@/hooks/useData";
+import { dataService } from "@/lib/services/dataService";
+import { useQueryClient } from "@tanstack/react-query";
 import { UserProfile, UserRole } from "@/types/roles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,20 +16,25 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, Trash2, Save, Search, Upload, FileSpreadsheet, CheckCircle, AlertCircle, Loader2, Cloud, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useAuth } from "@/hooks/useAuth";
 
 export function UserManager() {
+    const { user: currentUser } = useAuth();
+    const isAdmin = currentUser?.role === 'admin';
+
     const [searchTerm, setSearchTerm] = useState("");
     const [roleFilter, setRoleFilter] = useState<UserRole | "all">("all");
     const [isEditing, setIsEditing] = useState(false);
     const [syncing, setSyncing] = useState(false);
 
-    const [formData, setFormData] = useState<Partial<UserProfile> & { password?: string }>({
+    const [formData, setFormData] = useState<Partial<UserProfile> & { password?: string; canCreateUsers?: boolean }>({
         email: "",
         fullName: "",
         role: "student",
         documentType: "CC",
         documentNumber: "",
         password: "",
+        canCreateUsers: false,
     });
 
     const [bulkText, setBulkText] = useState("");
@@ -36,28 +42,8 @@ export function UserManager() {
     const [defaultPassword, setDefaultPassword] = useState("123456");
     const [bulkSyncing, setBulkSyncing] = useState(false);
 
-    const users = useLiveQuery(() => db.users.toArray());
-    const deduped = useRef(false);
-
-    useEffect(() => {
-        if (!users || users.length === 0 || deduped.current) return;
-        const seen = new Map<string, number>();
-        const toDelete: number[] = [];
-        for (const u of users) {
-            if (!u.userId) continue;
-            const prev = seen.get(u.userId);
-            if (prev !== undefined) {
-                toDelete.push(prev);
-                seen.set(u.userId, u.id!);
-            } else {
-                seen.set(u.userId, u.id!);
-            }
-        }
-        if (toDelete.length > 0) {
-            deduped.current = true;
-            db.users.bulkDelete(toDelete as any);
-        }
-    }, [users]);
+    const { data: users } = useUsers() as { data: any[] };
+    const queryClient = useQueryClient();
 
     const filteredUsers = users?.filter(u => {
         const matchesSearch = u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -74,7 +60,7 @@ export function UserManager() {
         return `${role}-${prefix}`;
     };
 
-    const syncToSupabase = async (usersList: { email: string; password: string; fullName: string; role: string; documentType?: string; documentNumber?: string }[]) => {
+    const syncToSupabase = async (usersList: { id?: string; email: string; password?: string; fullName: string; role: string; documentType?: string; documentNumber?: string; canCreateUsers?: boolean }[]) => {
         const res = await fetch('/api/admin/users', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -96,60 +82,45 @@ export function UserManager() {
             return;
         }
 
+        if (formData.id && !isAdmin) {
+            toast.error("Los docentes no pueden modificar usuarios.");
+            return;
+        }
+
         const role = formData.role || 'student';
         setSyncing(true);
 
         try {
             let authId: string | undefined
 
-            if (!formData.id && formData.password) {
-                const results = await syncToSupabase([{
-                    email,
-                    password: formData.password,
-                    fullName: formData.fullName,
-                    role,
-                    documentType: formData.documentType,
-                    documentNumber: formData.documentNumber,
-                }])
+            // Always call syncToSupabase to ensure cloud state is updated
+            const results = await syncToSupabase([{
+                id: formData.id,
+                email,
+                password: formData.password || undefined,
+                fullName: formData.fullName,
+                role,
+                documentType: formData.documentType,
+                documentNumber: formData.documentNumber,
+                canCreateUsers: role === 'teacher' ? (formData.canCreateUsers || false) : false,
+            }])
 
-                const result = results[0]
-                if (!result.success && result.error?.includes('ya existe')) {
-                    toast.warning(`${email}: ${result.error}. Se guardará solo localmente.`)
-                } else if (!result.success) {
-                    toast.error(`Error en Auth: ${result.error}`)
-                    setSyncing(false)
-                    return
-                } else if (result.id) {
-                    authId = result.id
-                }
+            const result = results[0]
+            if (!result.success && result.error?.includes('ya existe')) {
+                toast.warning(`${email}: ${result.error}. Se guardará solo localmente.`)
+            } else if (!result.success) {
+                toast.error(`Error en Auth: ${result.error}`)
+                setSyncing(false)
+                return
+            } else if (result.id) {
+                authId = result.id
             }
 
-            const userId = authId || formData.id || generateDeterministicId(email, role)
-            const existing = await db.users.where('userId').equals(userId).first();
-            if (existing?.id) {
-                await db.users.update(existing.id, {
-                    userId,
-                    email,
-                    name: formData.fullName,
-                    role: role as UserRole,
-                    documentType: formData.documentType as any,
-                    documentNumber: formData.documentNumber
-                });
-            } else {
-                await db.users.add({
-                    userId,
-                    email,
-                    name: formData.fullName,
-                    role: role as UserRole,
-                    documentType: formData.documentType as any,
-                    documentNumber: formData.documentNumber,
-                    createdAt: new Date().toISOString()
-                });
-            }
+            queryClient.invalidateQueries({ queryKey: ['profiles'] });
 
             toast.success("Usuario guardado correctamente");
             setIsEditing(false);
-            setFormData({ email: '', fullName: '', role: 'student', documentType: 'CC', documentNumber: '', password: '' });
+            setFormData({ email: '', fullName: '', role: 'student', documentType: 'CC', documentNumber: '', password: '', canCreateUsers: false });
         } catch (error: any) {
             console.error(error);
             toast.error(error.message || "Error al guardar usuario");
@@ -159,6 +130,7 @@ export function UserManager() {
     };
 
     const handleEdit = (user: any) => {
+        if (!isAdmin) return; // Prevent edits in UI for teachers
         setFormData({
             id: user.userId,
             email: user.email,
@@ -167,17 +139,24 @@ export function UserManager() {
             documentType: user.documentType || "CC",
             documentNumber: user.documentNumber || '',
             createdAt: user.createdAt,
+            canCreateUsers: user.canCreateUsers || false,
             password: '',
         });
         setIsEditing(true);
     };
 
     const handleDelete = async (userId: string) => {
-        if (confirm(`¿Eliminar usuario ${userId}? Solo se eliminará localmente (IndexedDB).`)) {
-            const user = await db.users.where({ userId }).first();
-            if (user && user.id) {
-                await db.users.delete(user.id);
-                toast.success("Usuario eliminado localmente");
+        if (!isAdmin) {
+            toast.error("No autorizado para eliminar usuarios");
+            return;
+        }
+        if (confirm(`¿Eliminar usuario ${userId}?`)) {
+            try {
+                await dataService.delete('profiles', userId);
+                queryClient.invalidateQueries({ queryKey: ['profiles'] });
+                toast.success("Usuario eliminado");
+            } catch {
+                toast.error("Error al eliminar usuario");
             }
         }
     };
@@ -242,35 +221,24 @@ export function UserManager() {
             for (const item of bulkPreview) {
                 try {
                     const userId = authIds.get(item.email) || item.generatedId
-                    const existing = await db.users.where('userId').equals(userId).first();
-                    if (existing) {
-                        await db.users.update(existing.id!, {
-                            userId,
-                            name: item.fullName,
-                            role: item.role,
-                            documentType: item.docType,
-                            documentNumber: item.docNum
-                        });
-                        updated++;
-                    } else {
-                        await db.users.add({
-                            userId,
-                            email: item.email,
-                            name: item.fullName,
-                            role: item.role,
-                            documentType: item.docType,
-                            documentNumber: item.docNum,
-                            createdAt: new Date().toISOString()
-                        });
-                        added++;
-                    }
+                    await dataService.save('profiles', {
+                        userId,
+                        email: item.email,
+                        name: item.fullName,
+                        role: item.role,
+                        documentType: item.docType,
+                        documentNumber: item.docNum,
+                        createdAt: new Date().toISOString()
+                    });
+                    added++;
                 } catch (e) {
                     console.error(e);
                     errors++;
                 }
             }
 
-            toast.success(`Importación completada: ${added} nuevos, ${updated} actualizados. Auth sincronizado.`);
+            queryClient.invalidateQueries({ queryKey: ['profiles'] });
+            toast.success(`Importación completada: ${added} sincronizados. Auth sincronizado.`);
             if (errors > 0) toast.warning(`${errors} errores locales.`);
 
             setBulkText("");
@@ -331,34 +299,36 @@ export function UserManager() {
                         </CardHeader>
                         <CardContent>
                             <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Nombre</TableHead>
-                                        <TableHead>Email / Rol</TableHead>
-                                        <TableHead>Identificación</TableHead>
-                                        <TableHead>ID Sistema</TableHead>
-                                        <TableHead className="text-right">Acciones</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {filteredUsers?.map(user => (
-                                        <TableRow key={user.userId} className="cursor-pointer hover:bg-muted/50" onClick={() => handleEdit(user)}>
-                                            <TableCell className="font-medium">{user.name}</TableCell>
-                                            <TableCell>
-                                                <div className="flex flex-col">
-                                                    <span>{user.email}</span>
-                                                    <span className="text-xs text-muted-foreground capitalize">{user.role}</span>
-                                                </div>
-                                            </TableCell>
-                                            <TableCell>{user.documentType} {user.documentNumber}</TableCell>
-                                            <TableCell className="font-mono text-xs">{user.userId}</TableCell>
-                                            <TableCell className="text-right">
-                                                <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10" onClick={(e) => { e.stopPropagation(); handleDelete(user.userId); }}>
-                                                    <Trash2 className="h-4 w-4" />
-                                                </Button>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
+                                 <TableHeader>
+                                     <TableRow>
+                                         <TableHead>Nombre</TableHead>
+                                         <TableHead>Email / Rol</TableHead>
+                                         <TableHead>Identificación</TableHead>
+                                         <TableHead>ID Sistema</TableHead>
+                                         {isAdmin && <TableHead className="text-right">Acciones</TableHead>}
+                                     </TableRow>
+                                 </TableHeader>
+                                 <TableBody>
+                                     {filteredUsers?.map(user => (
+                                         <TableRow key={user.userId} className={`cursor-pointer hover:bg-muted/50 ${!isAdmin ? 'cursor-default' : ''}`} onClick={() => isAdmin && handleEdit(user)}>
+                                             <TableCell className="font-medium">{user.name}</TableCell>
+                                             <TableCell>
+                                                 <div className="flex flex-col">
+                                                     <span>{user.email}</span>
+                                                     <span className="text-xs text-muted-foreground capitalize">{user.role}</span>
+                                                 </div>
+                                             </TableCell>
+                                             <TableCell>{user.documentType} {user.documentNumber}</TableCell>
+                                             <TableCell className="font-mono text-xs">{user.userId}</TableCell>
+                                             {isAdmin && (
+                                                 <TableCell className="text-right">
+                                                     <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10" onClick={(e) => { e.stopPropagation(); handleDelete(user.userId); }}>
+                                                         <Trash2 className="h-4 w-4" />
+                                                     </Button>
+                                                 </TableCell>
+                                             )}
+                                         </TableRow>
+                                     ))}
                                     {(!filteredUsers || filteredUsers.length === 0) && (
                                         <TableRow>
                                             <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
@@ -451,6 +421,23 @@ export function UserManager() {
                                         />
                                     </div>
                                 </div>
+                                {isAdmin && formData.role === 'teacher' && (
+                                     <div className="grid grid-cols-4 items-center gap-4">
+                                         <Label className="text-right">Permisos</Label>
+                                         <div className="col-span-3 flex items-center space-x-2">
+                                             <input
+                                                 type="checkbox"
+                                                 id="canCreateUsers"
+                                                 checked={formData.canCreateUsers || false}
+                                                 onChange={e => setFormData({ ...formData, canCreateUsers: e.target.checked })}
+                                                 className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                             />
+                                             <label htmlFor="canCreateUsers" className="text-sm text-muted-foreground select-none">
+                                                 Permitir a este docente ingresar/registrar usuarios
+                                             </label>
+                                         </div>
+                                     </div>
+                                 )}
                             </div>
                             <DialogFooter>
                                 <Button onClick={handleSave} disabled={syncing}>

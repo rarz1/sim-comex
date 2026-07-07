@@ -5,7 +5,7 @@ import { UserManager } from "@/components/admin/UserManager";
 
 export default function AdminUsersPage() {
     return (
-        <RoleGuard allowedRoles={['admin']}>
+        <RoleGuard allowedRoles={['admin', 'teacher']}>
             <div className="p-6">
                 <UserManager />
             </div>

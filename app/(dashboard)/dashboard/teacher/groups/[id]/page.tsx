@@ -1,7 +1,6 @@
 "use client";
 
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/db";
+import { useGroup, useUsers, useTemplates, useModule } from "@/hooks/useData";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -22,23 +21,22 @@ import {
 
 export default function TeacherGroupDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id: groupId } = React.use(params);
-    const group = useLiveQuery(() => db.groups.get(groupId));
-    const allUsers = useLiveQuery(() => db.users.toArray());
-    const allTemplates = useLiveQuery(() => db.templates.toArray());
+    const { data: group } = useGroup(groupId);
+    const { data: allUsers } = useUsers();
+    const { data: allTemplates } = useTemplates();
     const [searchTerm, setSearchTerm] = useState("");
 
-    // Fetch Module to know what docs to show
-    const module = useLiveQuery(() => group?.moduleId ? db.modules.get(group.moduleId) : undefined, [group]);
+    const { data: module } = useModule(group?.moduleId);
 
     if (!group) return <div>Cargando...</div>;
 
     const groupStudents = allUsers?.filter(u =>
-        group.members.some((m: string) => m === u.userId || m === u.name)
+        group.members.some((m: string) => m === u.id || m === u.fullName)
     ) || [];
 
     const filteredStudents = groupStudents.filter(s =>
-        s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.userId.toLowerCase().includes(searchTerm.toLowerCase())
+        s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        s.id.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     const formatDate = (dateStr: string) => {
@@ -83,7 +81,7 @@ export default function TeacherGroupDetailPage({ params }: { params: Promise<{ i
                         </div>
                     </div>
                     <CardDescription>
-                        Docente: {allUsers?.find(u => u.userId === group.teacherId)?.name || group.teacherId} · {(group.members || []).length} estudiantes
+                        Docente: {allUsers?.find(u => u.id === group.teacherId)?.fullName || group.teacherId} · {(group.members || []).length} estudiantes
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -95,7 +93,7 @@ export default function TeacherGroupDetailPage({ params }: { params: Promise<{ i
                             <div className="p-4 space-y-3">
                                 {/* Text content */}
                                 {section.content && (
-                                    <p className="text-sm whitespace-pre-wrap text-muted-foreground">{section.content}</p>
+                                    <div className="prose prose-sm dark:prose-invert max-w-none text-muted-foreground" dangerouslySetInnerHTML={{ __html: section.content }} />
                                 )}
 
                                 {/* Images and videos — centered */}
@@ -181,11 +179,11 @@ export default function TeacherGroupDetailPage({ params }: { params: Promise<{ i
                                 <TableRow key={idx}>
                                     <TableCell className="flex items-center gap-3">
                                         <Avatar className="h-8 w-8">
-                                            <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${student.userId}`} />
-                                            <AvatarFallback>{student.name.substring(0, 2).toUpperCase()}</AvatarFallback>
+                                            <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${student.id}`} />
+                                            <AvatarFallback>{student.fullName.substring(0, 2).toUpperCase()}</AvatarFallback>
                                         </Avatar>
                                         <div className="flex flex-col">
-                                            <span className="font-medium">{student.name}</span>
+                                            <span className="font-medium">{student.fullName}</span>
                                             <span className="text-xs text-muted-foreground flex items-center gap-1">
                                                 <Mail className="w-3 h-3" /> {student.email || 'sin-correo@sim.com'}
                                             </span>
@@ -205,7 +203,7 @@ export default function TeacherGroupDetailPage({ params }: { params: Promise<{ i
                                             </SheetTrigger>
                                             <SheetContent className="w-[400px] sm:w-[540px] overflow-y-auto">
                                                 <SheetHeader className="mb-6">
-                                                    <SheetTitle>Documentos de {student.name}</SheetTitle>
+                                                    <SheetTitle>Documentos de {student.fullName}</SheetTitle>
                                                     <SheetDescription>
                                                         Revisa los borradores y entregas asociadas al módulo <strong>{module?.title}</strong>.
                                                     </SheetDescription>
@@ -213,8 +211,8 @@ export default function TeacherGroupDetailPage({ params }: { params: Promise<{ i
 
                                                 {module ? (
                                                     <TeacherDocumentViewer
-                                                        studentId={student.userId}
-                                                        studentName={student.name}
+                                                        studentId={student.id}
+                                                        studentName={student.fullName}
                                                         moduleId={module?.id}
                                                         groupId={groupId}
                                                     />

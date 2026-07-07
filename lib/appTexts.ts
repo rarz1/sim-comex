@@ -31,6 +31,7 @@ export const defaultTexts: Record<string, string> = {
     "common.sidebar.users": "Usuarios",
     "common.sidebar.modules": "Módulos",
     "common.sidebar.catalogs": "Catálogos",
+    "common.sidebar.admin_exercises": "Banco Ejercicios",
     "common.sidebar.settings": "Ajustes de Sistema",
     "common.sidebar.teacher_panel": "Panel Control",
     "common.sidebar.teacher_groups": "Mis Grupos",
@@ -38,6 +39,7 @@ export const defaultTexts: Record<string, string> = {
     "common.sidebar.student_panel": "Panel Control",
     "common.sidebar.student_groups": "Mis Grupos",
     "common.sidebar.student_docs": "Mis Documentos",
+    "common.sidebar.student_cases": "Mis Casos",
     "common.sidebar.student_simulator": "Simulador",
 
     // --- ADMIN SETTINGS PAGE (SELF) ---

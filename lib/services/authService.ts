@@ -11,6 +11,23 @@ export const authService = {
         return !url || url.includes('your-project');
     },
 
+    async hasValidSession(): Promise<boolean> {
+        if (this.isMockEnabled()) return false;
+        try {
+            const supabase = createClient();
+            const res = await supabase.auth.getSession();
+            if (res.data?.session) return true;
+        } catch { /* fallback to cached */ }
+        // Si hay perfil cacheado, consideramos sesión válida
+        return !!this.getCachedProfile();
+    },
+
+    async getConnectionStatus(): Promise<'cloud' | 'local' | 'mock'> {
+        if (this.isMockEnabled()) return 'mock';
+        if (await this.hasValidSession()) return 'cloud';
+        return 'local';
+    },
+
     async getCurrentUser(): Promise<UserProfile | null> {
         if (this.isMockEnabled()) {
             try {
@@ -35,6 +52,16 @@ export const authService = {
         const cached = this.getCachedProfile();
 
         if (!session?.user) {
+            // Try to refresh session silently before falling back to local-only mode
+            try {
+                const refreshRes = await supabase.auth.refreshSession();
+                const refreshed = refreshRes.data?.session;
+                if (refreshed?.user) {
+                    const profile = await this.resolveUserRole(refreshed.user, supabase);
+                    this.cacheProfile(profile);
+                    return profile;
+                }
+            } catch { /* refresh failed, continue with cached */ }
             return cached || null;
         }
 
@@ -77,14 +104,6 @@ export const authService = {
                     .maybeSingle();
                 if (profile?.role) role = profile.role as UserProfile['role'];
             } catch { /* profile not found */ }
-        }
-
-        if (!role) {
-            try {
-                const { db } = await import('@/lib/db/db');
-                const existing = await db.users.where('email').equals(user.email!).first();
-                if (existing?.role) role = existing.role as UserProfile['role'];
-            } catch { /* dexie error */ }
         }
 
         if (!role) {
@@ -136,30 +155,6 @@ export const authService = {
             } else if (lowerEmail === 'student2@test.com') {
                 role = 'student'; name = 'Estudiante Comparativo'; id = 'student-2';
             } else {
-                // Dynamic but DETERMINISTIC
-                // Check if it's likely a teacher or student based on email/conventions or just default to student
-                // User said "maria gonzales" (teacher).
-                // Let's assume if it contains 'docente' or 'teacher' or 'prof' it's a teacher, otherwise check explicit list?
-                // Or better: In mock mode, maybe we default to student UNLESS specified?
-                // The user is "testing with real data", implying they might be creating users in the Admin panel.
-                // If they created users in Admin panel, those are stored in DB.
-                // WE SHOULD CHECK DB FIRST in mock mode login!
-
-                // This part of authService is "Login".
-                // If I log in as "maria@test.com", I expect to match the "maria" user in DB.
-
-                // Logic:
-                // 1. Try to find user in DB by email.
-                // 2. If found, use that ID and Role.
-                // 3. If not found, generate deterministic ID.
-
-                // We'll leave the generation here but we need to look up in DB inside the login function if possible, 
-                // OR ensure the generation matches how the Admin Panel created them.
-
-                // Admin Panel (GroupManager) creates users? No, usually Seed or Registration.
-                // If "Real Data" means they manually added them? 
-                // Let's make the ID deterministic so it persists across logins at least.
-
                 if (lowerEmail.includes('teacher') || lowerEmail.includes('docente') || lowerEmail.includes('prof')) {
                     role = 'teacher';
                 } else if (['maria.gonzales@test.com', 'carlos.ruis@test.com', 'juan.perez@test.com'].includes(lowerEmail)) {
@@ -179,75 +174,54 @@ export const authService = {
                 avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${avatarSeed}`
             };
 
-            // Save or Update in IndexedDB
-            const { db } = await import('@/lib/db/db');
-            try {
-                // 1. Check if user already exists by EMAIL (prevent duplicates)
-                const existingByEmail = await db.users.where('email').equals(email).first();
-
-                if (existingByEmail && existingByEmail.id) {
-                    // Update existing user to ensure latest name/role
-                    // STOP OVERWRITING ROLE: Trust the database role if it exists.
-                    // This allows Admins to manually change a user's role (e.g. Student -> Teacher)
-                    // and have it persist even if they log in again.
-
-                    // We only update if strictly necessary, but better to just Respect DB.
-                    role = existingByEmail.role as UserProfile['role'];
-                    name = existingByEmail.name;
-                    id = existingByEmail.userId;
-
-                    // Optional: Update timestamp or name if missing
-                    /*
-                   await db.users.update(existingByEmail.id, {
-                       // lastLogin: ...
-                   });
-                   */
-
-                    mockUser.id = existingByEmail.userId;
-                    mockUser.role = existingByEmail.role as UserProfile['role'];
-                    mockUser.fullName = existingByEmail.name;
-
-                } else {
-                    // 2. If not exists, insert new with Deterministic ID
-                    await db.users.put({
-                        userId: id, // The deterministic one computed above
-                        email: email,
-                        name: name,
-                        role: role,
-                        createdAt: new Date().toISOString()
-                    });
-                }
-            } catch (error) {
-                console.error('Failed to save user to IndexedDB:', error);
-            }
-
             localStorage.setItem(MOCK_SESSION_KEY, JSON.stringify(mockUser));
             return { user: mockUser };
         }
 
+        // Login via proxy API route (same-origin → sin bloqueos CSP/CORS)
+        let user: any;
+        let accessToken: string | undefined;
+        let refreshToken: string | undefined;
+
+        try {
+            const loginResPromise = fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password: password || '' }),
+            });
+
+            const loginRes: any = await Promise.race([
+                loginResPromise,
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Timeout: El servidor no responde')), 20000)
+                )
+            ]);
+
+            const body = await loginRes.json();
+            if (!loginRes.ok) {
+                return { error: body.error || `Error HTTP ${loginRes.status}` };
+            }
+            user = body.user;
+            accessToken = body.access_token;
+            refreshToken = body.refresh_token;
+        } catch (fetchErr: any) {
+            return { error: fetchErr?.message || 'Error de conexión con el servidor.' };
+        }
+
+        if (!user) return { error: 'No se pudo autenticar. Respuesta inesperada.' };
+
+        // Inyectar sesión en el cliente Supabase para REST calls
         const supabase = createClient();
-        const { data, error } = await supabase.auth.signInWithPassword({
-            email,
-            password: password || '',
-        });
-
-        if (error) return { error: error.message };
-
-        const user = data.user;
+        if (accessToken && refreshToken) {
+            try {
+                await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+            } catch { /* fallback: REST calls seguirán funcionando con el token directamente */ }
+        }
 
         // 1. Try role from user_metadata first
         let role = user.user_metadata?.role as UserProfile['role'] | undefined;
 
-        // 2. Check IndexedDB (migration from mock mode - user previously existed)
-        if (!role) {
-            try {
-                const { db } = await import('@/lib/db/db');
-                const existing = await db.users.where('email').equals(email).first();
-                if (existing?.role) role = existing.role as UserProfile['role'];
-            } catch { /* dexie error */ }
-        }
-
-        // 3. Infer from email pattern (stronger signal than trigger default 'student')
+        // 2. Infer from email pattern (stronger signal than trigger default 'student')
         if (!role) {
             const lower = email.toLowerCase();
             if (lower === 'admin@test.com' || lower.includes('admin')) role = 'admin';
@@ -288,32 +262,6 @@ export const authService = {
             });
         } catch (syncError) {
             console.error('Failed to sync profile to Supabase:', syncError);
-        }
-
-        // Save to IndexedDB for offline access and admin panel (upsert by userId)
-        const { db } = await import('@/lib/db/db');
-        try {
-            const existing = await db.users.where('userId').equals(user.id).first();
-            if (existing?.id) {
-                await db.users.update(existing.id, {
-                    email: user.email!,
-                    name: userProfile.fullName,
-                    role: userProfile.role,
-                    documentType: userProfile.documentType,
-                    documentNumber: userProfile.documentNumber,
-                });
-            } else {
-                await db.users.add({
-                    userId: user.id,
-                    email: user.email!,
-                    name: userProfile.fullName,
-                    role: userProfile.role,
-                    documentType: userProfile.documentType,
-                    documentNumber: userProfile.documentNumber,
-                });
-            }
-        } catch (error) {
-            console.error('Failed to save user to IndexedDB:', error);
         }
 
         // Cache profile to localStorage for fast subsequent loads

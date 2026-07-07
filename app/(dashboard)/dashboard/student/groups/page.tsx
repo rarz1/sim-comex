@@ -1,8 +1,7 @@
 "use client";
 
 import { useAuth } from "@/hooks/useAuth";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/db";
+import { useGroups, useModules, useTemplates, useUsers, useDrafts } from "@/hooks/useData";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, BookOpen, Calendar, FileText, ArrowRight } from "lucide-react";
 import Link from "next/link";
@@ -17,18 +16,18 @@ export default function StudentGroupsPage() {
     const { user } = useAuth();
 
     // 1. Fetch live data
-    const allGroups = useLiveQuery(() => db.groups.toArray());
-    const allModules = useLiveQuery(() => db.modules.toArray());
-    const allTemplates = useLiveQuery(() => db.templates.toArray());
-    const myDrafts = useLiveQuery(() => user ? db.drafts.where({ userId: user.id }).toArray() : [], [user]);
-    const allUsers = useLiveQuery(() => db.users.toArray());
+    const { data: allGroups } = useGroups();
+    const { data: allModules } = useModules();
+    const { data: allTemplates } = useTemplates();
+    const { data: myDrafts } = useDrafts({ userId: user?.id || '' });
+    const { data: allUsers } = useUsers() as any;
     const { t } = useAppText();
 
     // Find my userId from the database (matching by email or id from auth)
-    const myDbUser = allUsers?.find(u =>
-        (u.userId && user?.id && u.userId === user.id) ||
+    const myDbUser = allUsers?.find((u: any) =>
+        (u.id && user?.id && u.id === user.id) ||
         (u.email && user?.email && u.email.toLowerCase().trim() === user.email.toLowerCase().trim()) ||
-        (u.name && user?.fullName && u.name.toLowerCase().trim() === user.fullName.toLowerCase().trim())
+        (u.fullName && user?.fullName && u.fullName.toLowerCase().trim() === user.fullName.toLowerCase().trim())
     );
 
     // 2. Filter my groups (Check both ID and Name, being more resilient)
@@ -37,7 +36,7 @@ export default function StudentGroupsPage() {
         const normalizedMembers = members.map(m => String(m).toLowerCase().trim());
 
         return (
-            (myDbUser?.userId && normalizedMembers.includes(myDbUser.userId.toLowerCase().trim())) ||
+            (myDbUser?.id && normalizedMembers.includes(myDbUser.id.toLowerCase().trim())) ||
             (user?.id && normalizedMembers.includes(user.id.toLowerCase().trim())) ||
             (user?.email && normalizedMembers.includes(user.email.toLowerCase().trim())) ||
             (user?.fullName && normalizedMembers.includes(user.fullName.toLowerCase().trim()))
@@ -65,7 +64,7 @@ export default function StudentGroupsPage() {
                 <div className="grid gap-6 grid-cols-1">
                     {myGroups.map(group => {
                         const mod = allModules?.find(m => m.id === group.moduleId);
-                        const teacher = allUsers?.find(u => u.userId === group.teacherId);
+                        const teacher = allUsers?.find((u: any) => u.id === group.teacherId);
                         
                         // Calculate progress for this group
                         const attachedIds = new Set(mod?.sections?.flatMap(s => s.attachedDocumentIds || []) || []);
@@ -142,7 +141,7 @@ export default function StudentGroupsPage() {
                                             <Users className="w-3.5 h-3.5" /> Docente
                                         </p>
                                         <p className="text-base font-black text-gray-800 dark:text-gray-200">
-                                            {teacher?.name || group.teacherId}
+                                            {teacher?.fullName || group.teacherId}
                                         </p>
                                     </div>
                                     <div className="space-y-1.5">

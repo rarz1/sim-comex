@@ -1,10 +1,9 @@
 "use client";
 
 import React from "react";
-import { FormRenderer } from "@/components/document-renderer/FormRenderer";
+import { FormRenderer } from "@/components/form-builder/FormRenderer";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db/db";
+import { useTemplate } from "@/hooks/useData";
 
 export default function DocumentFillPage({ params }: { params: Promise<{ id: string }> }) {
     const router = useRouter();
@@ -13,7 +12,7 @@ export default function DocumentFillPage({ params }: { params: Promise<{ id: str
     const groupId = searchParams.get("groupId") || "default";
 
     // 1. Fetch Template dynamically
-    const template = useLiveQuery(() => db.templates.get(templateId));
+    const { data: template } = useTemplate(templateId);
 
     if (!template) {
         return (

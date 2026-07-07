@@ -11,4 +11,5 @@ export interface UserProfile {
     createdAt: string;
     documentType?: 'CC' | 'TI' | 'CE' | 'PASSPORT';
     documentNumber?: string;
+    canCreateUsers?: boolean;
 }
