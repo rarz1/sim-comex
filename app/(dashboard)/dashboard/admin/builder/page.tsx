@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { FormDesigner } from "@/components/form-builder/FormDesigner";
 import { DocumentTemplate } from "@/types/form";
-import { useTemplates, useDeleteTemplate } from "@/hooks/useData";
+import { useTemplates, useTemplate, useDeleteTemplate } from "@/hooks/useData";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -14,19 +14,19 @@ import { es } from "date-fns/locale";
 
 export default function BuilderPage() {
     const [isEditing, setIsEditing] = useState(false);
-    const [selectedTemplate, setSelectedTemplate] = useState<DocumentTemplate | null>(null);
+    const [editingId, setEditingId] = useState<string | null>(null);
 
     const { data: templates } = useTemplates();
+    const { data: fullTemplate } = useTemplate(editingId || undefined);
     const deleteTemplate = useDeleteTemplate();
 
     const handleCreateNew = () => {
-        // Reset selected template or create default empty
-        setSelectedTemplate(null);
+        setEditingId(null);
         setIsEditing(true);
     };
 
     const handleEdit = (template: DocumentTemplate) => {
-        setSelectedTemplate(template);
+        setEditingId(template.id);
         setIsEditing(true);
     };
 
@@ -42,12 +42,13 @@ export default function BuilderPage() {
     };
 
     if (isEditing) {
+        const editingTemplate = editingId ? fullTemplate : undefined;
         return (
             <div className="fixed inset-0 z-50 bg-background flex flex-col">
                 <div className="flex-1 overflow-hidden">
                     <FormDesigner
-                        key={selectedTemplate?.id || 'new'}
-                        initialTemplate={selectedTemplate || undefined}
+                        key={editingId || 'new'}
+                        initialTemplate={editingTemplate}
                         onClose={handleCloseEditor}
                     />
                 </div>
