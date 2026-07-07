@@ -38,7 +38,7 @@ export default function BuilderPage() {
 
     const handleCloseEditor = () => {
         setIsEditing(false);
-        setSelectedTemplate(null);
+        setEditingId(null);
     };
 
     if (isEditing) {
