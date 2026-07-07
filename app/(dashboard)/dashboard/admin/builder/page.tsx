@@ -42,13 +42,15 @@ export default function BuilderPage() {
     };
 
     if (isEditing) {
-        const editingTemplate = editingId ? (fullTemplate ?? undefined) : undefined;
+        if (editingId && !fullTemplate) {
+            return <div className="flex h-screen items-center justify-center text-muted-foreground">Cargando plantilla...</div>;
+        }
         return (
             <div className="fixed inset-0 z-50 bg-background flex flex-col">
                 <div className="flex-1 overflow-hidden">
                     <FormDesigner
                         key={editingId || 'new'}
-                        initialTemplate={editingTemplate}
+                        initialTemplate={editingId ? (fullTemplate ?? undefined) : undefined}
                         onClose={handleCloseEditor}
                     />
                 </div>
