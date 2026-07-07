@@ -111,7 +111,7 @@ export default function BuilderPage() {
                                         <TableCell>
                                             <div className="flex items-center gap-1 text-xs text-muted-foreground">
                                                 <Calendar className="w-3 h-3" />
-                                                <span>{formatDate(new Date(template.updatedAt), "d MMM yyyy", { locale: es })}</span>
+                                                <span>{template.updatedAt ? formatDate(new Date(template.updatedAt), "d MMM yyyy", { locale: es }) : '-'}</span>
                                             </div>
                                         </TableCell>
                                         <TableCell className="text-right">
