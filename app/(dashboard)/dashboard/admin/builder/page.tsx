@@ -42,7 +42,7 @@ export default function BuilderPage() {
     };
 
     if (isEditing) {
-        const editingTemplate = editingId ? fullTemplate : undefined;
+        const editingTemplate = editingId ? (fullTemplate ?? undefined) : undefined;
         return (
             <div className="fixed inset-0 z-50 bg-background flex flex-col">
                 <div className="flex-1 overflow-hidden">
