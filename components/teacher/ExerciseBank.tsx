@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { useGroups, useUsers, useExerciseFolders, useCreateOrUpdateExerciseFolder, useDeleteExerciseFolder, useExercises, useCreateOrUpdateExercise, useDeleteExercise, useExerciseAssignments, useCreateOrUpdateExerciseAssignment, useDeleteExerciseAssignment } from "@/hooks/useData";
+import { useGroups, useUsers, useModules, useExerciseFolders, useCreateOrUpdateExerciseFolder, useDeleteExerciseFolder, useExercises, useCreateOrUpdateExercise, useDeleteExercise, useExerciseAssignments, useCreateOrUpdateExerciseAssignment, useDeleteExerciseAssignment } from "@/hooks/useData";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,25 @@ type ViewMode = "grid" | "detail";
 
 interface ExerciseBankProps {
     isAdmin?: boolean;
+}
+
+function userName(u: any): string {
+    return u?.name || u?.fullName || u?.email || 'Usuario';
+}
+
+// Metadata helpers — store ownership in existing fields (no DB migration needed)
+function embedMeta(description: string, ownerId: string | null, space: string): string {
+    return JSON.stringify({ d: description, o: ownerId, s: space });
+}
+function extractMeta(description: string): { desc: string; ownerId?: string; space?: string } {
+    try { const p = JSON.parse(description); if (p && typeof p.d === 'string') return { desc: p.d, ownerId: p.o, space: p.s }; } catch {}
+    return { desc: description };
+}
+function addCaseMeta(content: any, ownerId: string | null, space: string): any {
+    return { ...content, _o: ownerId, _s: space };
+}
+function caseOwner(content: any): { ownerId?: string; space?: string } {
+    return { ownerId: content?._o, space: content?._s };
 }
 
 export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
@@ -45,6 +64,9 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
     const [editFolderData, setEditFolderData] = useState<CaseFolder | null>(null);
     const [uploadFiles, setUploadFiles] = useState<Array<{ file: File; title: string; description: string }>>([]);
     const [isUploading, setIsUploading] = useState(false);
+    const [copyFolderTarget, setCopyFolderTarget] = useState<CaseFolder | null>(null);
+    const [isCopyFolderOpen, setIsCopyFolderOpen] = useState(false);
+    const [copyFolderDestId, setCopyFolderDestId] = useState("");
 
     const isTeacher = user?.role === 'teacher';
 
@@ -57,16 +79,16 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
     const isReadOnly = isTeacher && currentTab === 'repository';
     const ownerFilter: string | null = currentTab === 'personal' ? (user?.id ?? null) : null;
 
-    const foldersFilter = currentTab === 'personal' && user?.id
-        ? { space: 'personal' as const, ownerId: user.id } as Record<string, string>
-        : { space: 'repository' as const } as Record<string, string>;
-    const { data: folders } = useExerciseFolders(foldersFilter);
+    const { data: allFolders } = useExerciseFolders();
+    const folders = (allFolders || []).filter(f => {
+        const m = extractMeta(f.description);
+        if (currentTab === 'personal') return m.ownerId === user?.id && m.space === 'personal';
+        return m.space !== 'personal';
+    });
     const { data: allGroups } = useGroups();
     const { data: allUsers } = useUsers();
-    const casesFilter = currentTab === 'personal' && user?.id
-        ? { space: 'personal' as const, ownerId: user.id } as Record<string, string>
-        : { space: 'repository' as const } as Record<string, string>;
-    const { data: allCases } = useExercises(casesFilter);
+    const { data: allModules } = useModules();
+    const { data: allCases } = useExercises();
     const { data: allAssignments } = useExerciseAssignments();
 
     const createOrUpdateFolder = useCreateOrUpdateExerciseFolder();
@@ -83,10 +105,10 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
         selectedGroup?.members?.includes(u.id || u.email)
     ) || [];
 
-    const personalFoldersFilter = user?.id
-        ? { space: 'personal' as const, ownerId: user.id } as Record<string, string>
-        : undefined;
-    const { data: personalFolders } = useExerciseFolders(personalFoldersFilter);
+    const personalFolders = (allFolders || []).filter(f => {
+        const m = extractMeta(f.description);
+        return m.ownerId === user?.id && m.space === 'personal';
+    });
 
     const folderCases = selectedFolder
         ? (allCases || []).filter(c => c.folderId === selectedFolder.id)
@@ -94,25 +116,34 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
 
     const createFolder = async () => {
         if (!newFolder.name) return;
-        const folder: CaseFolder = {
-            id: crypto.randomUUID(),
-            name: newFolder.name,
-            description: newFolder.description,
-            space: currentTab as 'repository' | 'personal',
-            ownerId: ownerFilter,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-        };
-        createOrUpdateFolder.mutate(folder);
-        setIsCreateFolderOpen(false);
-        setNewFolder({ name: "", description: "" });
+        try {
+            await createOrUpdateFolder.mutateAsync({
+                id: crypto.randomUUID(),
+                name: newFolder.name,
+                description: embedMeta(newFolder.description || '', ownerFilter, currentTab),
+            });
+            setIsCreateFolderOpen(false);
+            setNewFolder({ name: "", description: "" });
+        } catch (err: any) {
+            alert('Error al crear carpeta: ' + (err?.message || 'Desconocido.'));
+        }
     };
 
     const updateFolder = async () => {
         if (!editFolderData || !editFolderData.name) return;
-        createOrUpdateFolder.mutate(editFolderData);
-        setIsEditFolderOpen(false);
-        setEditFolderData(null);
+        const original = allFolders?.find(f => f.id === editFolderData.id);
+        const meta = original ? extractMeta(original.description) : { desc: '', ownerId: undefined, space: undefined };
+        try {
+            await createOrUpdateFolder.mutateAsync({
+                id: editFolderData.id,
+                name: editFolderData.name,
+                description: embedMeta(editFolderData.description, meta.ownerId || null, meta.space || 'repository'),
+            });
+            setIsEditFolderOpen(false);
+            setEditFolderData(null);
+        } catch (err: any) {
+            alert('Error al actualizar carpeta: ' + (err?.message || 'Desconocido.'));
+        }
     };
 
     const deleteFolder = async (folderId: string) => {
@@ -136,17 +167,17 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
 
     const handleFilesSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(e.target.files || []);
-        const valid = files.filter(f => f.type === 'application/pdf');
+        const valid = files.filter(f => f.type === 'application/pdf' || f.type === 'image/jpeg');
         if (valid.length === 0) {
-            alert("Solo se permiten archivos PDF");
+            alert("Solo se permiten archivos PDF o JPG");
             return;
         }
         if (valid.length !== files.length) {
-            alert(`${files.length - valid.length} archivo(s) omitido(s) (no son PDF).`);
+            alert(`${files.length - valid.length} archivo(s) omitido(s) (no son PDF ni JPG).`);
         }
         const newFiles = valid.map(f => ({
             file: f,
-            title: f.name.replace(/\.pdf$/i, ''),
+            title: f.name.replace(/\.(pdf|jpg|jpeg)$/i, ''),
             description: '',
         }));
         setUploadFiles(prev => [...prev, ...newFiles]);
@@ -171,21 +202,17 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
                     ? storageService.buildRepoPath(selectedFolder.id, caseId, item.file.name)
                     : storageService.buildPersonalPath(user!.id, selectedFolder.id, caseId, item.file.name);
                 const pdfUrl = await storageService.uploadPdf(item.file, storagePath);
-                const caseItem: CaseItem = {
+                const caseItem = {
                     id: caseId,
                     folderId: selectedFolder.id,
                     title: item.title,
                     description: item.description,
-                    content: {
+                    content: addCaseMeta({
                         text: "",
                         pdfUrl,
                         pdfName: item.file.name,
                         pdfSize: (item.file.size / 1024).toFixed(1) + ' KB',
-                    },
-                    space: currentTab as 'repository' | 'personal',
-                    ownerId: ownerFilter,
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString(),
+                    }, ownerFilter, currentTab),
                 };
                 createOrUpdateExercise.mutate(caseItem);
                 success++;
@@ -226,18 +253,13 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
 
     const copyCaseToPersonal = async () => {
         if (!copyTargetCase || !copyTargetFolderId || !user) return;
-        const newCase: CaseItem = {
+        createOrUpdateExercise.mutate({
             id: crypto.randomUUID(),
             folderId: copyTargetFolderId,
             title: copyTargetCase.title,
             description: copyTargetCase.description,
-            content: { ...copyTargetCase.content },
-            space: 'personal',
-            ownerId: user.id,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-        };
-        createOrUpdateExercise.mutate(newCase);
+            content: addCaseMeta({ ...(copyTargetCase.content || {}) }, user.id, 'personal'),
+        });
         setIsCopyCaseOpen(false);
         setCopyTargetCase(null);
         setCopyTargetFolderId("");
@@ -247,46 +269,122 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
         if (selectedCaseIds.length === 0 || !copyTargetFolderId || !user) return;
         const repoCases = (allCases || []).filter(c => selectedCaseIds.includes(c.id));
         for (const c of repoCases) {
-            const newCase: CaseItem = {
+            createOrUpdateExercise.mutate({
                 id: crypto.randomUUID(),
                 folderId: copyTargetFolderId,
                 title: c.title,
                 description: c.description,
-                content: { ...c.content },
-                space: 'personal',
-                ownerId: user.id,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-            };
-            createOrUpdateExercise.mutate(newCase);
+                content: addCaseMeta({ ...(c.content || {}) }, user.id, 'personal'),
+            });
         }
         setIsBulkCopyOpen(false);
         setSelectedCaseIds([]);
         setCopyTargetFolderId("");
     };
 
+    const copyFolderToPersonal = async () => {
+        if (!copyFolderTarget || !user) return;
+        setIsCopyFolderOpen(false);
+        const newFolderId = crypto.randomUUID();
+        const folderName = copyFolderTarget.name + ' (Copia)';
+        const cleanDesc = extractMeta(copyFolderTarget.description).desc || copyFolderTarget.description;
+        createOrUpdateFolder.mutate({
+            id: newFolderId,
+            name: folderName,
+            description: embedMeta(cleanDesc, user.id, 'personal'),
+        });
+        const casesToCopy = (allCases || []).filter(c => c.folderId === copyFolderTarget.id);
+        for (const c of casesToCopy) {
+            createOrUpdateExercise.mutate({
+                id: crypto.randomUUID(),
+                folderId: newFolderId,
+                title: c.title,
+                description: c.description,
+                content: addCaseMeta({ ...(c.content || {}) }, user.id, 'personal'),
+            });
+        }
+    };
+
+    const folderName = (folderId: string) => {
+        const f = (allFolders || []).find(f => f.id === folderId);
+        return f ? extractMeta(f.description).desc || f.name : '—';
+    };
+
     const assignCases = async () => {
         if (!selectedFolder || !user || selectedCaseIds.length === 0 || selectedStudentIds.length === 0) return;
-        const newAssignments: CaseAssignment[] = [];
+
+        const exactMatches = (allAssignments || []).filter(a =>
+            selectedCaseIds.includes(a.caseId) && selectedStudentIds.includes(a.studentId)
+        );
+        const crossMatches = (allAssignments || []).filter(a =>
+            a.groupId === selectedGroupId &&
+            selectedStudentIds.includes(a.studentId) &&
+            !selectedCaseIds.includes(a.caseId)
+        );
+
+        // Cross-case: student already in other cases of this group
+        let activeStudents = [...selectedStudentIds];
+        if (crossMatches.length > 0) {
+            const crossStudentIds = new Set(crossMatches.map(c => c.studentId));
+            const crossMap = new Map<string, string[]>();
+            for (const c of crossMatches) {
+                const student = allUsers?.find((u: any) => u.id === c.studentId);
+                const name = userName(student) || c.studentId.slice(0, 8);
+                const caseItem = (allCases || []).find(ca => ca.id === c.caseId);
+                const fName = caseItem ? folderName(caseItem.folderId) : '—';
+                const label = `"${caseItem?.title || c.caseId.slice(0, 8)}" [${fName}]`;
+                if (!crossMap.has(name)) crossMap.set(name, []);
+                crossMap.get(name)!.push(label);
+            }
+            let crossMsg = '';
+            for (const [name, items] of crossMap) {
+                crossMsg += `• ${name}\n`;
+                for (const it of items) crossMsg += `    ${it}\n`;
+            }
+            if (!confirm(`Estudiantes con varios casos del mismo grupo:\n\n${crossMsg}\n¿Asignarlos también a los nuevos casos seleccionados?`)) {
+                activeStudents = activeStudents.filter(id => !crossStudentIds.has(id));
+                if (activeStudents.length === 0) return;
+            }
+        }
+
+        // Exact match: same student + same case already assigned
+        if (exactMatches.length > 0) {
+            const grouped = new Map<string, string[]>();
+            for (const c of exactMatches) {
+                const student = allUsers?.find((u: any) => u.id === c.studentId);
+                const studentName = userName(student) || c.studentId.slice(0, 8);
+                const caseItem = (allCases || []).find(ca => ca.id === c.caseId);
+                const label = `"${caseItem?.title || c.caseId.slice(0, 8)}"`;
+                if (!grouped.has(studentName)) grouped.set(studentName, []);
+                grouped.get(studentName)!.push(label);
+            }
+            let msg = '';
+            for (const [name, items] of grouped) {
+                msg += `• ${name}\n`;
+                for (const it of items) msg += `    ${it}\n`;
+            }
+            const nuevas = selectedCaseIds.length * activeStudents.length - exactMatches.length;
+            if (nuevas === 0) {
+                alert(`Estudiantes repitiendo caso en el mismo grupo:\n\n${msg}`);
+                return;
+            }
+            if (!confirm(`Estudiantes repitiendo caso en el mismo grupo:\n\n${msg}¿Asignar las ${nuevas} restantes?`)) return;
+        }
+
+        // Create assignments (skip exact duplicates)
         for (const caseId of selectedCaseIds) {
-            for (const studentId of selectedStudentIds) {
-                const exists = allAssignments?.some(a => a.caseId === caseId && a.studentId === studentId);
-                if (!exists) {
-                    newAssignments.push({
-                        id: crypto.randomUUID(),
-                        caseId,
-                        studentId,
-                        groupId: selectedGroupId,
-                        assignedBy: user.id,
-                        assignedAt: new Date().toISOString(),
-                        status: 'pending',
+            for (const studentId of activeStudents) {
+                if (!exactMatches.some(c => c.caseId === caseId && c.studentId === studentId)) {
+                    createOrUpdateExerciseAssignment.mutate({
+                        id: crypto.randomUUID(), caseId, studentId,
+                        groupId: selectedGroupId, assignedBy: user.id,
+                        assignedAt: new Date().toISOString(), status: 'pending',
                     });
                 }
             }
         }
-        if (newAssignments.length > 0) {
-            for (const a of newAssignments) createOrUpdateExerciseAssignment.mutate(a);
-        }
+        setSelectedCaseIds([]);
+        setSelectedStudentIds([]);
     };
 
     const viewPdf = (caseItem: CaseItem) => {
@@ -295,9 +393,21 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
     };
 
     const getAssignedStudents = (caseId: string) => {
-        return (allAssignments || []).filter(a => a.caseId === caseId).map(a => {
+        const teacherGroupIds = new Set(teacherGroups.map(g => g.id));
+        const filtered = isTeacher
+            ? (allAssignments || []).filter(a => a.caseId === caseId && teacherGroupIds.has(a.groupId))
+            : (allAssignments || []).filter(a => a.caseId === caseId);
+        return filtered.map(a => {
             const u = allUsers?.find(u => u.id === a.studentId);
-            return { userId: a.studentId, name: u?.fullName || a.studentId, status: a.status, assignmentId: a.id };
+            const g = allGroups?.find(g => g.id === a.groupId);
+            return {
+                userId: a.studentId,
+                name: userName(u) || a.studentId.slice(0, 8),
+                groupId: a.groupId,
+                groupName: g?.name || a.groupId.slice(0, 8),
+                status: a.status,
+                assignmentId: a.id,
+            };
         });
     };
 
@@ -347,7 +457,7 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
 
     if (viewMode === "detail" && selectedFolder) {
         const selectedGroupUsers = selectedGroupId
-            ? allUsers?.filter(u => selectedGroup?.members?.includes(u.id || u.email)) || []
+            ? allUsers?.filter(u => (selectedGroup?.members || []).filter(Boolean).includes(u.id || u.email)) || []
             : [];
 
         return (
@@ -358,7 +468,7 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
                     </Button>
                     <div className="flex-1">
                         <h2 className="text-2xl font-bold">{selectedFolder.name}</h2>
-                        <p className="text-muted-foreground">{selectedFolder.description}</p>
+                        <p className="text-muted-foreground">{extractMeta(selectedFolder.description).desc}</p>
                     </div>
                     <div className="flex gap-2">
                         {canUploadCase && (
@@ -411,7 +521,7 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
                                                         setSelectedStudentIds(c ? [...selectedStudentIds, u.id] : selectedStudentIds.filter(id => id !== u.id));
                                                     }}
                                                 />
-                                                <span className="text-sm">{u.fullName}</span>
+                                                <span className="text-sm">{userName(u)}</span>
                                             </div>
                                         ))}
                                         {selectedGroupUsers.length === 0 && (
@@ -474,19 +584,37 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
                                                     <p className="text-[10px] text-muted-foreground">{c.content.pdfSize}</p>
                                                 )}
                                                 {assigned.length > 0 && (
-                                                    <div className="flex flex-wrap gap-1 mt-1.5">
-                                                        {assigned.map(s => (
-                                                            <Badge key={s.userId} variant="secondary" className="text-[9px] flex items-center gap-1">
-                                                                {s.name}
-                                                                {canAssign && (
-                                                                    <button
-                                                                        onClick={(e) => { e.stopPropagation(); removeAssignment(c.id, s.userId); }}
-                                                                        className="hover:text-destructive ml-0.5"
-                                                                    >
-                                                                        <X className="h-2.5 w-2.5" />
-                                                                    </button>
-                                                                )}
-                                                            </Badge>
+                                                    <div className="space-y-1.5 mt-1.5">
+                                                        {Object.entries(
+                                                            assigned.reduce((acc: Record<string, typeof assigned>, s) => {
+                                                                (acc[s.groupId] ??= []).push(s);
+                                                                return acc;
+                                                            }, {})
+                                                        ).map(([gId, students]) => (
+                                                            <div key={gId}>
+                                                                <button
+                                                                    onClick={() => setSelectedGroupId(gId)}
+                                                                    className="text-[10px] font-bold text-primary uppercase tracking-wider hover:underline mb-0.5 flex items-center gap-1"
+                                                                >
+                                                                    <Users className="w-3 h-3" />
+                                                                    {students[0].groupName}
+                                                                </button>
+                                                                <div className="flex flex-wrap gap-1">
+                                                                    {students.map(s => (
+                                                                        <Badge key={s.userId} variant="secondary" className="text-[9px] flex items-center gap-1">
+                                                                            {s.name}
+                                                                            {canAssign && (
+                                                                                <button
+                                                                                    onClick={(e) => { e.stopPropagation(); removeAssignment(c.id, s.userId); }}
+                                                                                    className="hover:text-destructive ml-0.5"
+                                                                                >
+                                                                                    <X className="h-2.5 w-2.5" />
+                                                                                </button>
+                                                                            )}
+                                                                        </Badge>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
                                                         ))}
                                                     </div>
                                                 )}
@@ -530,10 +658,10 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
                         </DialogHeader>
                         <div className="space-y-4 flex-1 overflow-y-auto">
                             <div className="border-2 border-dashed rounded-lg p-6 text-center hover:bg-muted/30 transition-colors">
-                                <Input type="file" accept=".pdf" multiple onChange={handleFilesSelect} className="hidden" id="pdf-upload-input" />
+                                <Input type="file" accept=".pdf,.jpg,.jpeg" multiple onChange={handleFilesSelect} className="hidden" id="pdf-upload-input" />
                                 <Label htmlFor="pdf-upload-input" className="cursor-pointer flex flex-col items-center gap-2">
                                     <Upload className="h-8 w-8 text-muted-foreground" />
-                                    <span className="text-sm font-medium">Seleccionar archivos PDF</span>
+                                    <span className="text-sm font-medium">Seleccionar archivos PDF o JPG</span>
                                     <span className="text-xs text-muted-foreground">O arrastra los archivos aquí</span>
                                 </Label>
                             </div>
@@ -571,15 +699,33 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
                         <DialogHeader>
                             <DialogTitle>{viewingCase?.title}</DialogTitle>
                         </DialogHeader>
-                        <div className="flex-1 h-full min-h-0">
+                        <div className="flex-1 h-full min-h-0 flex items-center justify-center">
                             {viewingCase?.content.pdfUrl && (
-                                <iframe src={viewingCase.content.pdfUrl} className="w-full h-[calc(90vh-100px)] rounded-lg border" title={viewingCase.title} />
+                                viewingCase.content.pdfUrl.match(/\.jpe?g$/i) ? (
+                                    <img src={viewingCase.content.pdfUrl} alt={viewingCase.title} className="max-w-full max-h-full rounded-lg border shadow-md object-contain" />
+                                ) : (
+                                    <iframe src={viewingCase.content.pdfUrl} className="w-full h-[calc(90vh-100px)] rounded-lg border" title={viewingCase.title} />
+                                )
                             )}
                         </div>
                     </DialogContent>
                 </Dialog>
 
-                <Dialog open={isEditFolderOpen} onOpenChange={setIsEditFolderOpen}>
+            <Dialog open={isCopyFolderOpen} onOpenChange={setIsCopyFolderOpen}>
+                <DialogContent style={{ width: '450px', maxWidth: '95vw' }}>
+                    <DialogHeader><DialogTitle>Copiar Carpeta a Mi Espacio</DialogTitle></DialogHeader>
+                    <div className="space-y-4">
+                        <p className="text-sm text-muted-foreground">
+                            Se copiará la carpeta <strong>{copyFolderTarget?.name}</strong> y todos sus casos a tu espacio personal.
+                        </p>
+                        <Button onClick={copyFolderToPersonal} className="w-full">
+                            <Download className="mr-2 h-4 w-4" /> Copiar Carpeta
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={isEditFolderOpen} onOpenChange={setIsEditFolderOpen}>
                     <DialogContent style={{ width: '500px', maxWidth: '95vw' }}>
                         <DialogHeader><DialogTitle>Editar Carpeta</DialogTitle></DialogHeader>
                         <div className="space-y-4">
@@ -589,7 +735,7 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
                             </div>
                             <div>
                                 <Label>Descripción</Label>
-                                <Input value={editFolderData?.description || ''} onChange={e => setEditFolderData(prev => prev ? { ...prev, description: e.target.value } : null)} placeholder="Descripción opcional" />
+                                <Input value={editFolderData ? extractMeta(editFolderData.description).desc : ''} onChange={e => setEditFolderData(prev => prev ? { ...prev, description: e.target.value } : null)} placeholder="Descripción opcional" />
                             </div>
                             <Button onClick={updateFolder} className="w-full" disabled={!editFolderData?.name}>Guardar Cambios</Button>
                         </div>
@@ -654,6 +800,20 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
                         </div>
                     </DialogContent>
                 </Dialog>
+
+                <Dialog open={isCopyFolderOpen} onOpenChange={setIsCopyFolderOpen}>
+                    <DialogContent style={{ width: '450px', maxWidth: '95vw' }}>
+                        <DialogHeader><DialogTitle>Copiar Carpeta a Mi Espacio</DialogTitle></DialogHeader>
+                        <div className="space-y-4">
+                            <p className="text-sm text-muted-foreground">
+                                Se copiará la carpeta <strong>{copyFolderTarget?.name}</strong> y todos sus casos a tu espacio personal.
+                            </p>
+                            <Button onClick={copyFolderToPersonal} className="w-full">
+                                <Download className="mr-2 h-4 w-4" /> Copiar Carpeta
+                            </Button>
+                        </div>
+                    </DialogContent>
+                </Dialog>
             </div>
         );
     }
@@ -713,6 +873,11 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
                                 <div className="flex items-start justify-between">
                                     <Folder className="h-8 w-8 text-primary/60" />
                                     <div className="flex gap-1">
+                                        {isReadOnly && (
+                                            <Button size="sm" variant="outline" className="h-7 text-[10px] gap-1 px-2" onClick={(e) => { e.stopPropagation(); setCopyFolderTarget(folder); setCopyFolderDestId(""); setIsCopyFolderOpen(true); }}>
+                                                <Download className="h-3 w-3" /> Copiar
+                                            </Button>
+                                        )}
                                         {canDelete && (
                                             <>
                                                 <Button size="icon" variant="ghost" className="h-6 w-6 opacity-0 group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); setEditFolderData({ ...folder }); setIsEditFolderOpen(true); }}>
@@ -726,7 +891,7 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
                                     </div>
                                 </div>
                                 <CardTitle className="text-base mt-2">{folder.name}</CardTitle>
-                                {folder.description && <p className="text-xs text-muted-foreground line-clamp-2">{folder.description}</p>}
+                                {(() => { const d = extractMeta(folder.description).desc; return d ? <p className="text-xs text-muted-foreground line-clamp-2">{d}</p> : null; })()}
                             </CardHeader>
                             <CardContent>
                                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -753,6 +918,20 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
                 )}
             </div>
 
+            <Dialog open={isCopyFolderOpen} onOpenChange={setIsCopyFolderOpen}>
+                <DialogContent style={{ width: '450px', maxWidth: '95vw' }}>
+                    <DialogHeader><DialogTitle>Copiar Carpeta a Mi Espacio</DialogTitle></DialogHeader>
+                    <div className="space-y-4">
+                        <p className="text-sm text-muted-foreground">
+                            Se copiará la carpeta <strong>{copyFolderTarget?.name}</strong> y todos sus casos a tu espacio personal.
+                        </p>
+                        <Button onClick={copyFolderToPersonal} className="w-full">
+                            <Download className="mr-2 h-4 w-4" /> Copiar Carpeta
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
             <Dialog open={isEditFolderOpen} onOpenChange={setIsEditFolderOpen}>
                 <DialogContent style={{ width: '500px', maxWidth: '95vw' }}>
                     <DialogHeader><DialogTitle>Editar Carpeta</DialogTitle></DialogHeader>
@@ -762,13 +941,13 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
                             <Input value={editFolderData?.name || ''} onChange={e => setEditFolderData(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Nombre de la carpeta" />
                         </div>
                         <div>
-                            <Label>Descripción</Label>
-                            <Input value={editFolderData?.description || ''} onChange={e => setEditFolderData(prev => prev ? { ...prev, description: e.target.value } : null)} placeholder="Descripción opcional" />
+                                <Label>Descripción</Label>
+                                <Input value={editFolderData ? extractMeta(editFolderData.description).desc : ''} onChange={e => setEditFolderData(prev => prev ? { ...prev, description: e.target.value } : null)} placeholder="Descripción opcional" />
+                            </div>
+                            <Button onClick={updateFolder} className="w-full" disabled={!editFolderData?.name}>Guardar Cambios</Button>
                         </div>
-                        <Button onClick={updateFolder} className="w-full" disabled={!editFolderData?.name}>Guardar Cambios</Button>
-                    </div>
-                </DialogContent>
-            </Dialog>
-        </div>
-    );
-}
+                    </DialogContent>
+                </Dialog>
+            </div>
+        );
+    }

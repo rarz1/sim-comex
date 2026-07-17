@@ -44,6 +44,9 @@ export function ModuleEditor({ moduleId, onSave, onCancel }: ModuleEditorProps) 
         if (fetchedModule) {
             setModule({
                 ...fetchedModule,
+                title: fetchedModule.title ?? '',
+                description: fetchedModule.description ?? '',
+                status: fetchedModule.status ?? 'draft',
                 sections: fetchedModule.sections || [],
                 groupIds: fetchedModule.groupIds || []
             });
@@ -181,7 +184,7 @@ export function ModuleEditor({ moduleId, onSave, onCancel }: ModuleEditorProps) 
                         <CardHeader className="pb-2">
                             <div className="flex items-center justify-between">
                                 <Input
-                                    value={section.title}
+                                    value={section.title ?? ''}
                                     onChange={(e) => updateSection(section.id, { title: e.target.value })}
                                     className="font-bold text-lg border-none shadow-none focus-visible:ring-0 p-0 h-auto"
                                 />

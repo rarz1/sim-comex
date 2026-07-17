@@ -141,7 +141,7 @@ export default function StudentGroupsPage() {
                                             <Users className="w-3.5 h-3.5" /> Docente
                                         </p>
                                         <p className="text-base font-black text-gray-800 dark:text-gray-200">
-                                            {teacher?.fullName || group.teacherId}
+                                            {teacher?.name || group.teacherId}
                                         </p>
                                     </div>
                                     <div className="space-y-1.5">

@@ -2,12 +2,11 @@
 
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { useExercises, useExerciseAssignments, useUsers, useExerciseFolders } from "@/hooks/useData";
+import { useExercises, useExerciseAssignments, useUsers, useExerciseFolders, useGroups, useModules } from "@/hooks/useData";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { FileText, Eye, Users, Folder, BookOpen, UserCheck } from "lucide-react";
+import { FileText, Eye, BookOpen, UserCheck } from "lucide-react";
 import type { CaseItem } from "@/types/exercises";
 
 export default function StudentCasesPage() {
@@ -19,6 +18,8 @@ export default function StudentCasesPage() {
     const { data: allAssignments = [] } = useExerciseAssignments();
     const { data: allUsers = [] } = useUsers() as any;
     const { data: allFolders = [] } = useExerciseFolders();
+    const { data: allGroups = [] } = useGroups();
+    const { data: allModules = [] } = useModules();
 
     const myAssignments = (allAssignments || []).filter(a => a.studentId === user?.id);
     const myCaseIds = new Set(myAssignments.map(a => a.caseId));
@@ -32,7 +33,7 @@ export default function StudentCasesPage() {
             .filter(a => a.caseId === caseId && a.groupId === groupId && a.studentId !== user?.id)
             .map(a => {
                 const u = allUsers?.find((u: any) => u.id === a.studentId);
-                return { userId: a.studentId, name: u?.fullName || a.studentId };
+                return { userId: a.studentId, name: u?.name || u?.fullName || a.studentId };
             });
     };
 
@@ -65,45 +66,42 @@ export default function StudentCasesPage() {
                     {myCases.map(c => {
                         const assignment = getCaseAssignment(c.id);
                         const peers = assignment ? getPeersOnSameCase(c.id, assignment.groupId) : [];
+                        const group = allGroups?.find((g: any) => g.id === assignment?.groupId);
+                        const mod = group ? allModules?.find((m: any) => m.id === group.moduleId) : null;
                         return (
                             <Card key={c.id} className="hover:shadow-lg transition-all group">
                                 <CardHeader className="pb-3">
-                                    <div className="flex items-start justify-between">
-                                        <div className="flex items-center gap-3">
-                                            <div className="h-10 w-10 rounded-xl bg-primary/5 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-                                                <FileText className="w-5 h-5 text-primary" />
-                                            </div>
-                                            <div>
-                                                <CardTitle className="text-lg">{c.title}</CardTitle>
-                                                {c.description && (
-                                                    <p className="text-sm text-muted-foreground">{c.description}</p>
-                                                )}
-                                            </div>
+                                    <div className="flex items-start gap-3">
+                                        <div className="h-10 w-10 rounded-xl bg-primary/5 flex items-center justify-center group-hover:bg-primary/20 transition-colors shrink-0">
+                                            <FileText className="w-5 h-5 text-primary" />
                                         </div>
-                                        <Badge variant={assignment?.status === 'completed' ? 'default' : 'secondary'}>
-                                            {assignment?.status === 'completed' ? 'Completado' : 'Pendiente'}
-                                        </Badge>
+                                        <div className="min-w-0 flex-1">
+                                            <CardTitle className="text-lg truncate">{c.title}</CardTitle>
+                                            {c.description && (
+                                                <p className="text-sm text-muted-foreground line-clamp-2">{c.description}</p>
+                                            )}
+                                            {group && (
+                                                <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+                                                    <span className="flex items-center gap-1">
+                                                        <BookOpen className="h-3 w-3" />
+                                                        {mod?.title || '—'}
+                                                    </span>
+                                                    <span>·</span>
+                                                    <span>{group.name}</span>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </CardHeader>
                                 <CardContent className="space-y-3">
-                                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                                        <div className="flex items-center gap-1">
-                                            <Folder className="h-3.5 w-3.5" />
-                                            <span>{getFolderName(c.folderId)}</span>
-                                        </div>
-                                        {c.content.pdfSize && (
-                                            <span className="text-xs">{c.content.pdfSize}</span>
-                                        )}
-                                    </div>
-
                                     {peers.length > 0 && (
                                         <div className="flex items-center gap-2 flex-wrap">
-                                            <UserCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                                            <UserCheck className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                                             <span className="text-xs text-muted-foreground">Compañeros:</span>
                                             {peers.map(p => (
-                                                <Badge key={p.userId} variant="outline" className="text-[10px]">
+                                                <span key={p.userId} className="text-xs font-medium bg-muted px-2 py-0.5 rounded-md">
                                                     {p.name}
-                                                </Badge>
+                                                </span>
                                             ))}
                                         </div>
                                     )}
@@ -127,6 +125,9 @@ export default function StudentCasesPage() {
                 <DialogContent style={{ width: '1200px', maxWidth: '95vw', height: '90vh' }}>
                     <DialogHeader>
                         <DialogTitle>{viewingCase?.title}</DialogTitle>
+                        {viewingCase?.content?.pdfName && (
+                            <p className="text-sm text-muted-foreground mt-1">{viewingCase.content.pdfName}</p>
+                        )}
                     </DialogHeader>
                     <div className="flex-1 h-full min-h-0">
                         {viewingCase?.content.pdfUrl && (

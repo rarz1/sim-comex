@@ -1,54 +1,95 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createAdminClient } from '@/lib/supabase/admin';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+function toSnakeCase(key: string): string {
+  return key.replace(/[A-Z]/g, (c) => '_' + c.toLowerCase());
+}
+
+async function fetchFromSupabase(path: string, options?: RequestInit) {
+  const res = await fetch(`${supabaseUrl}/rest/v1/${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      ...options?.headers,
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = text;
+    try { const j = JSON.parse(text); msg = j.message || j.error || text; } catch {}
+    throw new Error(msg);
+  }
+  const ct = res.headers.get('content-type') || '';
+  if (ct.includes('application/json')) {
+    const json = await res.json();
+    return Array.isArray(json) ? json : (json as any).value ?? json;
+  }
+  return null;
+}
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ table: string }> }
 ) {
-  const { table } = await params;
-  const supabase = createAdminClient();
-  const searchParams = Object.fromEntries(request.nextUrl.searchParams);
-  const { id, select, ...filters } = searchParams;
+  try {
+    const { table } = await params;
+    const searchParams = Object.fromEntries(request.nextUrl.searchParams);
+    const { id, select, ...filters } = searchParams;
 
-  let query: any = supabase.from(table).select(select || '*');
-
-  if (id) {
-    query = query.eq('id', id).single();
-  } else {
-    for (const [key, value] of Object.entries(filters)) {
-      query = query.eq(key, value);
+    let path = `${table}?select=${select || '*'}`;
+    if (id) {
+      path += `&id=eq.${id}`;
+    } else {
+      for (const [key, value] of Object.entries(filters)) {
+        path += `&${toSnakeCase(key)}=eq.${encodeURIComponent(value)}`;
+      }
     }
-  }
 
-  const { data, error } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ data });
+    const rows = await fetchFromSupabase(path);
+    const data = id ? (rows?.[0] ?? null) : (rows ?? []);
+    return NextResponse.json({ data });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
 }
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ table: string }> }
 ) {
-  const { table } = await params;
-  const supabase = createAdminClient();
-  const body = await request.json();
+  try {
+    const { table } = await params;
+    const body = await request.json();
 
-  const { data, error } = await supabase.from(table).upsert(body).select();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ data: data?.[0] ?? null });
+    const data = await fetchFromSupabase(table, {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: { Prefer: 'return=representation' },
+    });
+    return NextResponse.json({ data: Array.isArray(data) ? data[0] : data });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
 }
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ table: string }> }
 ) {
-  const { table } = await params;
-  const supabase = createAdminClient();
-  const { id } = await request.json();
+  try {
+    const { table } = await params;
+    const { id } = await request.json();
+    if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
 
-  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
-
-  const { error } = await supabase.from(table).delete().eq('id', id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ success: true });
+    await fetchFromSupabase(`${table}?id=eq.${id}`, {
+      method: 'DELETE',
+    });
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
 }

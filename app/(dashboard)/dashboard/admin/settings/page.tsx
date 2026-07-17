@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { useAppText } from "@/hooks/useAppText";
 import { toast } from "sonner";
+import { LandingPageDesigner } from "@/components/admin/LandingPageDesigner";
 
 export default function AdminSettingsPage() {
     const [search, setSearch] = useState("");
@@ -200,29 +201,29 @@ export default function AdminSettingsPage() {
                 {/* --- ADMIN TABS --- */}
                 <TabsContent value="admin" className="space-y-6 focus-visible:outline-none">
                     <Tabs defaultValue="general">
-                        <TabsList className="bg-transparent border-b rounded-none h-auto p-0 gap-4 w-full justify-start flex-wrap mb-4 pb-2">
-                            <TabsTrigger value="general" className="relative h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 font-black text-[11px] uppercase tracking-wider text-muted-foreground data-[state=active]:text-primary mb-[-1px] shrink-0">
+                        <TabsList className="bg-muted/30 p-1 rounded-xl h-auto w-fit flex-wrap">
+                            <TabsTrigger value="general" className="rounded-lg px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold h-9">
                                 <LayoutDashboard className="w-3.5 h-3.5 mr-1" /> {t('admin.settings.subtab_dashboard', 'Dashboard')}
                             </TabsTrigger>
-                            <TabsTrigger value="builder" className="relative h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 font-black text-[11px] uppercase tracking-wider text-muted-foreground data-[state=active]:text-primary mb-[-1px] shrink-0">
+                            <TabsTrigger value="builder" className="rounded-lg px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold h-9">
                                 <PenTool className="w-3.5 h-3.5 mr-1" /> Constructor
                             </TabsTrigger>
-                            <TabsTrigger value="reports" className="relative h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 font-black text-[11px] uppercase tracking-wider text-muted-foreground data-[state=active]:text-primary mb-[-1px] shrink-0">
+                            <TabsTrigger value="reports" className="rounded-lg px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold h-9">
                                 <BarChart className="w-3.5 h-3.5 mr-1" /> {t('admin.settings.subtab_reports', 'Reportes')}
                             </TabsTrigger>
-                            <TabsTrigger value="groups" className="relative h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 font-black text-[11px] uppercase tracking-wider text-muted-foreground data-[state=active]:text-primary mb-[-1px] shrink-0">
+                            <TabsTrigger value="groups" className="rounded-lg px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold h-9">
                                 <Users className="w-3.5 h-3.5 mr-1" /> {t('admin.settings.subtab_groups', 'Grupos')}
                             </TabsTrigger>
-                            <TabsTrigger value="users" className="relative h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 font-black text-[11px] uppercase tracking-wider text-muted-foreground data-[state=active]:text-primary mb-[-1px] shrink-0">
+                            <TabsTrigger value="users" className="rounded-lg px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold h-9">
                                 <UserCog className="w-3.5 h-3.5 mr-1" /> {t('admin.settings.subtab_users', 'Usuarios')}
                             </TabsTrigger>
-                            <TabsTrigger value="modules" className="relative h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 font-black text-[11px] uppercase tracking-wider text-muted-foreground data-[state=active]:text-primary mb-[-1px] shrink-0">
+                            <TabsTrigger value="modules" className="rounded-lg px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold h-9">
                                 <BookOpen className="w-3.5 h-3.5 mr-1" /> Módulos
                             </TabsTrigger>
-                            <TabsTrigger value="catalogs" className="relative h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-0 font-black text-[11px] uppercase tracking-wider text-muted-foreground data-[state=active]:text-primary mb-[-1px] shrink-0">
+                            <TabsTrigger value="catalogs" className="rounded-lg px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold h-9">
                                 <Database className="w-3.5 h-3.5 mr-1" /> Catálogos
                             </TabsTrigger>
-                            <TabsTrigger value="seed" className="relative h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-0 font-black text-[11px] uppercase tracking-wider text-muted-foreground data-[state=active]:text-primary mb-[-1px] shrink-0">
+                            <TabsTrigger value="seed" className="rounded-lg px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold h-9">
                                 <Database className="w-3.5 h-3.5 mr-1" /> Datos (Test)
                             </TabsTrigger>
                         </TabsList>
@@ -259,17 +260,17 @@ export default function AdminSettingsPage() {
                 {/* --- TEACHER TABS --- */}
                 <TabsContent value="teacher" className="space-y-6 focus-visible:outline-none">
                     <Tabs defaultValue="dashboard">
-                        <TabsList className="bg-transparent border-b rounded-none h-auto p-0 gap-4 w-full justify-start flex-wrap mb-4 pb-2">
-                            <TabsTrigger value="dashboard" className="relative h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 font-black text-[11px] uppercase tracking-wider text-muted-foreground data-[state=active]:text-primary mb-[-1px] shrink-0">
+                        <TabsList className="bg-muted/30 p-1 rounded-xl h-auto w-fit flex-wrap">
+                            <TabsTrigger value="dashboard" className="rounded-lg px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold h-9">
                                 <LayoutDashboard className="w-3.5 h-3.5 mr-1" /> {t('admin.settings.subtab_dashboard', 'Dashboard')}
                             </TabsTrigger>
-                            <TabsTrigger value="groups" className="relative h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 font-black text-[11px] uppercase tracking-wider text-muted-foreground data-[state=active]:text-primary mb-[-1px] shrink-0">
+                            <TabsTrigger value="groups" className="rounded-lg px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold h-9">
                                 <Users className="w-3.5 h-3.5 mr-1" /> {t('admin.settings.subtab_groups', 'Mis Grupos')}
                             </TabsTrigger>
-                            <TabsTrigger value="reports" className="relative h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 font-black text-[11px] uppercase tracking-wider text-muted-foreground data-[state=active]:text-primary mb-[-1px] shrink-0">
+                            <TabsTrigger value="reports" className="rounded-lg px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold h-9">
                                 <BarChart className="w-3.5 h-3.5 mr-1" /> {t('admin.settings.subtab_reports', 'Reportes')}
                             </TabsTrigger>
-                            <TabsTrigger value="library" className="relative h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 font-black text-[11px] uppercase tracking-wider text-muted-foreground data-[state=active]:text-primary mb-[-1px] shrink-0">
+                            <TabsTrigger value="library" className="rounded-lg px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold h-9">
                                 <BookOpen className="w-3.5 h-3.5 mr-1" /> Biblioteca
                             </TabsTrigger>
                         </TabsList>
@@ -293,17 +294,17 @@ export default function AdminSettingsPage() {
                 {/* --- STUDENT TABS --- */}
                 <TabsContent value="student" className="space-y-6 focus-visible:outline-none">
                     <Tabs defaultValue="dashboard">
-                        <TabsList className="bg-transparent border-b rounded-none h-auto p-0 gap-4 w-full justify-start flex-wrap mb-4 pb-2">
-                            <TabsTrigger value="dashboard" className="relative h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 font-black text-[11px] uppercase tracking-wider text-muted-foreground data-[state=active]:text-primary mb-[-1px] shrink-0">
+                        <TabsList className="bg-muted/30 p-1 rounded-xl h-auto w-fit flex-wrap">
+                            <TabsTrigger value="dashboard" className="rounded-lg px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold h-9">
                                 <LayoutDashboard className="w-3.5 h-3.5 mr-1" /> {t('admin.settings.subtab_dashboard', 'Dashboard')}
                             </TabsTrigger>
-                            <TabsTrigger value="groups" className="relative h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 font-black text-[11px] uppercase tracking-wider text-muted-foreground data-[state=active]:text-primary mb-[-1px] shrink-0">
+                            <TabsTrigger value="groups" className="rounded-lg px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold h-9">
                                 <Users className="w-3.5 h-3.5 mr-1" /> {t('admin.settings.subtab_groups', 'Mis Grupos')}
                             </TabsTrigger>
-                            <TabsTrigger value="docs" className="relative h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 font-black text-[11px] uppercase tracking-wider text-muted-foreground data-[state=active]:text-primary mb-[-1px] shrink-0">
+                            <TabsTrigger value="docs" className="rounded-lg px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold h-9">
                                 <FileText className="w-3.5 h-3.5 mr-1" /> Documentos
                             </TabsTrigger>
-                            <TabsTrigger value="reports" className="relative h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 font-black text-[11px] uppercase tracking-wider text-muted-foreground data-[state=active]:text-primary mb-[-1px] shrink-0">
+                            <TabsTrigger value="reports" className="rounded-lg px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold h-9">
                                 <BarChart className="w-3.5 h-3.5 mr-1" /> {t('admin.settings.subtab_reports', 'Reportes')}
                             </TabsTrigger>
                         </TabsList>
@@ -327,18 +328,21 @@ export default function AdminSettingsPage() {
                 {/* --- GLOBAL TABS --- */}
                 <TabsContent value="common" className="space-y-6 focus-visible:outline-none">
                     <Tabs defaultValue="branding">
-                        <TabsList className="bg-transparent border-b rounded-none h-auto p-0 gap-4 w-full justify-start flex-wrap mb-4 pb-2">
-                            <TabsTrigger value="branding" className="relative h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 font-black text-[11px] uppercase tracking-wider text-muted-foreground data-[state=active]:text-primary mb-[-1px] shrink-0">
+                        <TabsList className="bg-muted/30 p-1 rounded-xl h-auto w-fit flex-wrap">
+                            <TabsTrigger value="branding" className="rounded-lg px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold h-9">
                                 <Globe className="w-3.5 h-3.5 mr-1" /> {t('admin.settings.subtab_branding', 'Identidad')}
                             </TabsTrigger>
-                            <TabsTrigger value="sidebar" className="relative h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 font-black text-[11px] uppercase tracking-wider text-muted-foreground data-[state=active]:text-primary mb-[-1px] shrink-0">
+                            <TabsTrigger value="sidebar" className="rounded-lg px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold h-9">
                                 <LayoutDashboard className="w-3.5 h-3.5 mr-1" /> {t('admin.settings.subtab_sidebar', 'Menú Lateral')}
                             </TabsTrigger>
-                            <TabsTrigger value="settings" className="relative h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 font-black text-[11px] uppercase tracking-wider text-muted-foreground data-[state=active]:text-primary mb-[-1px] shrink-0">
+                            <TabsTrigger value="settings" className="rounded-lg px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold h-9">
                                 <Settings className="w-3.5 h-3.5 mr-1" /> Ajustes Admin
                             </TabsTrigger>
-                            <TabsTrigger value="home_login" className="relative h-9 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-2 font-black text-[11px] uppercase tracking-wider text-muted-foreground data-[state=active]:text-primary mb-[-1px] shrink-0">
+                            <TabsTrigger value="home_login" className="rounded-lg px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold h-9">
                                 <Globe className="w-3.5 h-3.5 mr-1" /> Home & Login
+                            </TabsTrigger>
+                            <TabsTrigger value="landing" className="rounded-lg px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm text-xs font-bold h-9">
+                                <PenTool className="w-3.5 h-3.5 mr-1" /> Landing Page
                             </TabsTrigger>
                         </TabsList>
                         <div className="mt-6">
@@ -362,6 +366,9 @@ export default function AdminSettingsPage() {
                                         {renderTextList("common.login")}
                                     </div>
                                 </div>
+                            </TabsContent>
+                            <TabsContent value="landing" className="mt-0 focus-visible:outline-none">
+                                <LandingPageDesigner />
                             </TabsContent>
                         </div>
                     </Tabs>

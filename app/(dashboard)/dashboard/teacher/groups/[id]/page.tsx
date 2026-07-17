@@ -5,11 +5,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ArrowLeft, Mail, BookOpen, Search, Calendar, FileText, ImageIcon, Video } from "lucide-react";
+import { ArrowLeft, Mail, BookOpen, Search, Calendar, FileText, Eye } from "lucide-react";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import React, { useState } from "react";
 import { TeacherDocumentViewer } from "@/components/teacher/TeacherDocumentViewer";
+import { FormVisualizer } from "@/components/form-builder/FormVisualizer";
 import {
     Sheet,
     SheetContent,
@@ -35,8 +36,8 @@ export default function TeacherGroupDetailPage({ params }: { params: Promise<{ i
     ) || [];
 
     const filteredStudents = groupStudents.filter(s =>
-        s.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.id.toLowerCase().includes(searchTerm.toLowerCase())
+        (s.fullName?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+        (s.id?.toLowerCase() || '').includes(searchTerm.toLowerCase())
     );
 
     const formatDate = (dateStr: string) => {
@@ -126,16 +127,32 @@ export default function TeacherGroupDetailPage({ params }: { params: Promise<{ i
                                     </div>
                                 )}
 
-                                {/* Attached document templates */}
+                                {/* Attached document templates — clickable preview */}
                                 {section.attachedDocumentIds?.length > 0 && (
-                                    <div className="space-y-1 pt-2 border-t">
+                                    <div className="space-y-2 pt-2 border-t">
                                         <p className="text-xs font-semibold text-muted-foreground">Documentos adjuntos:</p>
-                                        {section.attachedDocumentIds.map((docId: string) => (
-                                            <div key={docId} className="flex items-center gap-2 text-xs p-1.5 bg-muted/30 rounded">
-                                                <FileText className="w-3.5 h-3.5 text-primary" />
-                                                <span>{getTemplateName(docId)}</span>
-                                            </div>
-                                        ))}
+                                        <div className="flex flex-wrap gap-2">
+                                            {section.attachedDocumentIds.map((docId: string) => {
+                                                const tmpl = allTemplates?.find(t => t.id === docId);
+                                                if (!tmpl) return (
+                                                    <span key={docId} className="text-xs text-muted-foreground italic">{docId}</span>
+                                                );
+                                                return (
+                                                    <FormVisualizer
+                                                        key={docId}
+                                                        template={tmpl}
+                                                        formData={{}}
+                                                        trigger={
+                                                            <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8 cursor-pointer">
+                                                                <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
+                                                                <span className="truncate max-w-[180px]">{tmpl?.title || docId}</span>
+                                                                <Eye className="w-3 h-3 ml-1 text-muted-foreground" />
+                                                            </Button>
+                                                        }
+                                                    />
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -180,10 +197,10 @@ export default function TeacherGroupDetailPage({ params }: { params: Promise<{ i
                                     <TableCell className="flex items-center gap-3">
                                         <Avatar className="h-8 w-8">
                                             <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${student.id}`} />
-                                            <AvatarFallback>{student.fullName.substring(0, 2).toUpperCase()}</AvatarFallback>
+                                            <AvatarFallback>{(student.fullName || '??').substring(0, 2).toUpperCase()}</AvatarFallback>
                                         </Avatar>
                                         <div className="flex flex-col">
-                                            <span className="font-medium">{student.fullName}</span>
+                                            <span className="font-medium">{student.fullName || 'Usuario'}</span>
                                             <span className="text-xs text-muted-foreground flex items-center gap-1">
                                                 <Mail className="w-3 h-3" /> {student.email || 'sin-correo@sim.com'}
                                             </span>
@@ -203,7 +220,7 @@ export default function TeacherGroupDetailPage({ params }: { params: Promise<{ i
                                             </SheetTrigger>
                                             <SheetContent className="w-[400px] sm:w-[540px] overflow-y-auto">
                                                 <SheetHeader className="mb-6">
-                                                    <SheetTitle>Documentos de {student.fullName}</SheetTitle>
+                                                    <SheetTitle>Documentos de {student.fullName || 'Usuario'}</SheetTitle>
                                                     <SheetDescription>
                                                         Revisa los borradores y entregas asociadas al módulo <strong>{module?.title}</strong>.
                                                     </SheetDescription>
@@ -212,7 +229,7 @@ export default function TeacherGroupDetailPage({ params }: { params: Promise<{ i
                                                 {module ? (
                                                     <TeacherDocumentViewer
                                                         studentId={student.id}
-                                                        studentName={student.fullName}
+                                                        studentName={student.fullName || 'Usuario'}
                                                         moduleId={module?.id}
                                                         groupId={groupId}
                                                     />

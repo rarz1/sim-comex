@@ -98,25 +98,23 @@ export default function TeacherReportsPage() {
     const generateReports = async (group: Group, moduleId: string) => {
         setGenerating(true);
         try {
-            const summaries = [];
+            const allProfiles = await dataService.getAll<any>('profiles').catch(() => []);
 
-            for (const memberId of group.members) {
+            const reportTasks = group.members.map(async (memberId) => {
                 const report = await validationService.generateStudentReport(memberId, moduleId, group.id);
+                const profile = allProfiles.find((p: any) => p.id === memberId);
+                const studentName = profile?.name || profile?.email || memberId;
 
-                let studentName = memberId;
-                try {
-                    const profile = await dataService.getById<any>('profiles', memberId);
-                    if (profile?.fullName) studentName = profile.fullName;
-                } catch {}
-
-                summaries.push({
+                return {
                     studentId: memberId,
-                    studentName: studentName,
+                    studentName,
                     score: report.score,
                     lastUpdated: new Date(report.generatedAt).toLocaleDateString("es-CO", { day: "numeric", month: "short", year: "numeric" }),
                     fullReport: report
-                });
-            }
+                };
+            });
+
+            const summaries = await Promise.all(reportTasks);
 
             summaries.sort((a, b) => a.score - b.score);
             setStudentSummaries(summaries);
@@ -208,7 +206,7 @@ export default function TeacherReportsPage() {
         <div className="container mx-auto p-6 space-y-6">
             <div className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight">Reportes de Validación</h1>
+                    <h1 className="text-3xl font-bold tracking-tight">Evaluaciones</h1>
                     <p className="text-muted-foreground">Analiza la consistencia de los datos de los estudiantes.</p>
                 </div>
                 <Button variant="outline" onClick={refreshReports} disabled={!selectedGroup || generating}>

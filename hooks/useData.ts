@@ -80,7 +80,7 @@ export function useDeleteModule() {
 }
 
 export function useTemplates(filters?: Record<string, string>) {
-  const mergedFilters = { select: 'id,title,status,schema,created_at,updated_at', ...filters };
+  const mergedFilters = { select: 'id,title,status,schema,created_at,updated_at,pdf_url', ...filters };
   return useTable<Template>('templates', mergedFilters);
 }
 
@@ -157,9 +157,9 @@ export function useDeleteExerciseAssignment() {
 }
 
 export function useAppTexts() {
-  return useTable<{ id: string; key: string; value: string }>('app_texts');
+  return useTable<{ id: string; key: string; value: string; location: string }>('app_texts');
 }
 
 export function useCreateOrUpdateAppText() {
-  return useCreateOrUpdate<{ id: string; key: string; value: string }>('app_texts');
+  return useCreateOrUpdate<{ id: string; key: string; value: string; location: string }>('app_texts');
 }

@@ -121,7 +121,7 @@ export default function StudentGroupDetailPage({ params }: { params: Promise<{ i
                                 <Users className="w-3.5 h-3.5" /> Docente
                             </p>
                             <p className="text-lg font-black text-gray-900 dark:text-gray-100">
-                                {allUsers?.find((u: any) => u.id === group.teacherId)?.fullName || group.teacherId}
+                                {allUsers?.find((u: any) => u.id === group.teacherId)?.name || group.teacherId}
                             </p>
                         </div>
                         <div className="space-y-1 border-l border-muted-foreground/10 pl-6">
@@ -347,6 +347,9 @@ export default function StudentGroupDetailPage({ params }: { params: Promise<{ i
                 <DialogContent style={{ width: '1400px', maxWidth: '95vw', height: '90vh' }}>
                     <DialogHeader>
                         <DialogTitle className="text-2xl font-black">{selectedExercise?.title}</DialogTitle>
+                        {selectedExercise?.content?.pdfName && (
+                            <p className="text-sm text-muted-foreground">{selectedExercise.content.pdfName}</p>
+                        )}
                     </DialogHeader>
                     <div className="flex-1 h-full min-h-0 overflow-y-auto">
                         {selectedExercise?.content?.pdfUrl ? (

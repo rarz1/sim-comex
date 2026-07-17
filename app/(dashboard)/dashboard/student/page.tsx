@@ -269,7 +269,7 @@ export default function StudentDashboard() {
                                             <h4 className="font-black text-lg text-primary leading-tight">{group.name}</h4>
                                             <div className="flex flex-col gap-1">
                                                 <p className="text-xs font-bold text-muted-foreground flex items-center gap-1.5 uppercase font-mono tracking-wider">
-                                                    <Users className="w-3.5 h-3.5" /> Prof. {allUsers?.find(u => u.id === group.teacherId)?.fullName || group.teacherId}
+                                                    <Users className="w-3.5 h-3.5" /> Prof. {(allUsers as any[])?.find((u: any) => u.id === group.teacherId)?.name || group.teacherId}
                                                 </p>
                                                 <p className="text-xs font-bold text-muted-foreground flex items-center gap-1.5">
                                                     <BookOpen className="w-3.5 h-3.5" /> {mod?.title || "Módulo Académico"}

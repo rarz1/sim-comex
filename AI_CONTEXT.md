@@ -556,6 +556,83 @@ SIM 1/
 - Errores nuevos: 0.
 - Pendientes: Migrar push ops a API routes proxy (pre-existing).
 
+### Sesión 35 - Julio 2026
+- **Separation repo/personal sin migración DB**: Almacenamos ownership DENTRO de campos existentes:
+  - `embedMeta`/`extractMeta`: guarda `{ownerId,space}` como JSON en `description` de folders.
+  - `addCaseMeta`/`caseOwner`: guarda `{_o,_s}` dentro del `content` JSONB de casos.
+  - Filtros de folders/casos ahora usan metadata extraída en vez de columnas DB.
+  - `copyFolderToPersonal`/`copyCaseToPersonal`/`bulkCopyToPersonal`: copian metadata correcta.
+  - `updateFolder`: preserva metadata original al editar descripción.
+  - Descripción mostrada en UI: siempre limpia (sin JSON).
+- **Permisos corregidos**:
+  - `canDelete = isAdmin` (solo admin elimina casos/carpetas).
+  - `canRename = isAdmin`.
+  - Teacher en repo: read-only. Teacher en personal: crea carpetas + sube casos.
+- **Fix nombre estudiante en asignaciones**: `getAssignedStudents()` usa `fullName`, fallback a `name` (columna del trigger Supabase), luego `email`.
+- **Fix nombres no aparecían en lista de estudiantes**: Agregado helper `userName(u)` que retorna `fullName || name || email || 'Usuario'` y usado en todos los `<span>` de nombre.
+- **Fix duplicación de asignaciones**: `assignCases()` ahora detecta asignaciones existentes ANTES de mutar. Muestra alert si ya existen, confirm si hay mezcla. Limpia `selectedCaseIds` y `selectedStudentIds` después de asignar.
+- Build: `tsc --noEmit` + `next build` pasan.
+
+### Sesión 34 - Julio 2026
+- **Fix asignaciones: mostrar nombre estudiante + agrupar por grupo**:
+  - `getAssignedStudents()` ahora incluye `groupId`/`groupName` y mejor fallback para nombre (email o UUID truncado).
+  - Display de asignaciones agrupado por grupo: cada grupo es un botón clickeable que selecciona el grupo en el panel lateral.
+  - `components/teacher/ExerciseBank.tsx`
+- **Fix carpetas personales de docente no aparecían**:
+  - Filtro client-side: si no hay carpetas con `ownerId` matching, muestra TODAS (fallback para cuando columnas no existen).
+  - `createFolder` incluye `ownerId` si aplica, con retry si la columna no existe.
+  - Copia de casos (`copyCaseToPersonal`, `bulkCopyToPersonal`) incluye `ownerId` con retry.
+- **Nuevo: Copiar carpeta entera**:
+  - Botón `Download` en cada carpeta en vista repositorio (solo teachers).
+  - `copyFolderToPersonal()`: copia la carpeta + todos sus casos al espacio personal del docente.
+  - Diálogo de confirmación antes de copiar.
+- Build: `tsc --noEmit` + `next build` pasan.
+
+### Sesión 33 - Julio 2026
+- **Fix crear carpetas en Banco de Ejercicios no funcionaba**:
+  - Las tablas `exercise_folders` y `exercises` en Supabase no tenían las columnas `space`/`owner_id` (agregadas en Sesión 23 para espacio personal).
+  - Creado `supabase_migration_add_space_owner.sql` para agregar las columnas faltantes. (Ejecutar en Supabase SQL Editor).
+  - Mientras no se ejecute la migración, las operaciones de guardado ya no envían `space`, `ownerId`, `createdAt`, `updatedAt` para evitar errores de columna inexistente.
+  - Filtros de GET: cambiados de server-side (`.eq('space',...)`) a client-side (`.filter(f => f.space === ...)`) para que no fallen si la columna no existe. `useExerciseFolders()` y `useExercises()` se llaman sin filtros.
+  - Agregado `try/catch` con `alert()` en `createFolder` y `updateFolder` para que el usuario vea errores.
+- **Soporte JPG en subida de archivos**:
+  - `app/api/storage/upload/route.ts`: Bucket ahora acepta `image/jpeg`. `contentType` dinámico según tipo de archivo. Validación acepta `application/pdf` e `image/jpeg`.
+  - `ExerciseBank.tsx`: `handleFilesSelect` filtra PDF + JPG. Input accept `.pdf,.jpg,.jpeg`. Título extrae extensión `.pdf|.jpg|.jpeg`. Visor muestra `<img>` si es JPG, `<iframe>` si es PDF.
+  - Build: `tsc --noEmit` + `next build` pasan.
+
+### Sesión 32 - Julio 2026
+- **Fix documentos adjuntos no visibles en vista docente**:
+  - `dataService.ts`: `mapKeys()` no procesaba arrays anidados → `toCamelObj`/`toSnakeObj` dejaban intactas las keys dentro de `sections` JSONB. Si Supabase almacenaba `attached_document_ids`, el código leía `section.attachedDocumentIds` (undefined).
+  - Fix: `mapKeys` ahora recorre arrays recursivamente con `obj.map(item => mapKeys(item, transform))` y valores de objetos anidados con `mapKeys(v, transform)`.
+- **Fix "No hay imagen de fondo configurada" en FormVisualizer**:
+  - `hooks/useData.ts`: `useTemplates()` no incluía `pdf_url` en el `select` → `template.pdfUrl` era undefined.
+  - Fix: agregado `pdf_url` al select.
+- **Fix drafts no aparecían en TeacherDocumentViewer**:
+  - `app/api/data/[table]/route.ts`: Los filtros GET usaban camelCase (`userId`, `moduleId`) pero Supabase columnas son snake_case (`user_id`, `module_id`). `query.eq('userId', val)` retornaba 0 resultados.
+
+### Sesión 37 (actual) - Julio 2026
+- **ContactSection.tsx**: Importados `useDesignSettings` y `hexToRgba` para usar colores dinámicos. Reemplazados todos los colores hardcodeados por inline styles dinámicos. Agregado `<style>` block con CSS dinámico para hover/focus/placeholder del formulario. Duplicados fijos: imports duplicados eliminados, variable `shadowStyle` duplicada eliminada.
+- **Footer.tsx**: Reescribir completo con colores dinámicos desde `useDesignSettings()`. Usa `hexToRgba` para backgrounds, borders, y texto. Sin cambios estructurales.
+- **SimulatorsGrid.tsx**: Ya tenía colores dinámicos correctos (de Sesión 12). Sin cambios.
+- **AccessSection.tsx**: Reescribir con colores dinámicos. Reemplazados gradientes hardcodeados por inline styles con `hexToRgba`. Agregado hover state para botón gold.
+- **ContactSection.tsx**: Colores dinámicos en formulario, floating labels, input fields, botón submit. Shadow dinámico.
+- Errores: Ninguno. `tsc --noEmit` pasa.
+- Pendientes: Verificar que los colores dinámicos se reflejen correctamente en la landing page.
+  - Fix: API route convierte camelCase → snake_case en filter keys via `toSnakeCase()`.
+- **Mejora: documentos clickeables en módulo**:
+  - `teacher/groups/[id]/page.tsx`: Los documentos adjuntos usan `FormVisualizer` directo con `trigger` prop (sin `Dialog` anidado). Click al ojo → abre preview directo.
+  - Docente puede ver el documento que los estudiantes diligencian (read-only).
+  - `FormVisualizer.tsx`: Agregado `DialogClose` con icono `ArrowLeft` junto al botón "Imprimir Documento" para cerrar la ventana.
+- **Mejora: FormVisualizer sin pdfUrl**:
+  - `FormVisualizer.tsx`: Cuando no hay `pdfUrl` pero el template tiene campos en `schema`, muestra una grilla con labels y valores, en vez de solo "No hay imagen de fondo".
+- **Build**: `tsc --noEmit` + `next build` pasan sin errores.
+
+### Sesión 31 - Julio 2026
+- **Fix `Cannot read properties of undefined (reading 'toLowerCase')` en teacher/groups/[id]**:
+  - `s.fullName.toLowerCase()` fallaba cuando `s.fullName` era undefined/null.
+  - Agregado optional chaining `?.toLowerCase()` + fallback `|| ''` en el filter de estudiantes.
+  - Archivo: `app/(dashboard)/dashboard/teacher/groups/[id]/page.tsx:37-40`
+
 ### Sesión 30 - Julio 2026
 - **Fix Vercel no reflejaba datos migrados**: Vercel apuntaba a proyecto Supabase distinto al de `.env.local`.
   - Actualizadas Environment Variables en Vercel Dashboard con las del `.env.local`.
@@ -565,10 +642,145 @@ SIM 1/
   - `git push` de 77 archivos (migración Supabase-first + API routes).
   - API routes ahora funcionan: `GET /api/data/profiles` → 200.
 - **Fix `RangeError: Invalid time value`**: `template.updatedAt` nullable en builder page. Agregado guard.
-- Errores: Vercel tenía código viejo. `new Date(null)` crasheaba.
+- **Fix imágenes de fondo + campos no aparecían en builder**:
+  - Causa 1: `useTemplates()` no incluía `pdf_url` en el `select` (para mantener respuestas ligeras). Al hacer clic para editar, `FormDesigner` recibía plantilla sin `pdfUrl`.
+  - Causa 2: `FormDesigner` se montaba antes de que `useTemplate()` terminara la consulta completa. `useState` se inicializaba con plantilla vacía y no se actualizaba cuando llegaban los datos.
+  - Fix 1: Agregado `select` param a API route `/api/data/[table]` para especificar campos.
+  - Fix 2: Builder page carga plantilla completa via `useTemplate(id)` y espera a que esté lista antes de montar `FormDesigner`.
+- **Fix snake_case ↔ camelCase**: Supabase devuelve `pdf_url`, `teacher_id`, etc. App espera `pdfUrl`, `teacherId`.
+  - Agregado `mapKeys/toCamelCase/toSnakeCase` en `dataService.ts` para normalizar keys al leer (snake→camel) y al escribir (camel→snake).
+  - Aplica a todas las tablas (groups, templates, modules, etc.) de forma transparente.
+- **Fix `deleteSelectedTemplate` residual**: Error de compilación por variable renombrada. Corregido.
+- Errores: Base64 data URLs de imágenes hacen respuestas pesadas (>5MB para todas las plantillas).
 - Pendientes: N/A.
 
 ---
+
+### Sesión 36 - Julio 2026
+- **Fix copiar carpeta (ExerciseBank)**: Botón "Copiar" siempre visible (quitado `opacity-0 group-hover:opacity-100`). Diálogo de copia agregado en vista detalle y grilla.
+- **Fix `getAssignedStudents` para teacher**: Filtra assignments por grupos del docente (`teacherGroupIds`).
+- **Fix `assignCases` con detalle de duplicados**: Muestra alert/confirm con nombre del estudiante, título del caso, grupo y módulo.
+- **Fix permisos teacher**: `canDelete` y `canRename` ahora `isAdmin || (isTeacher && currentTab === 'personal')`.
+- **Fix `userName()`**: Cambiado `fullName || name` → `name || fullName` (la DB devuelve `name`, no `fullName`).
+- **Fix GroupManager docente selector**: `t.userId` → `t.id` (el campo real de Supabase es `id`).
+- **Fix GroupManager student list**: `student.userId` → `student.id`.
+- **Fix GroupManager member resolution**: `u.userId` → `u.id`.
+- **Fix UserManager**: `user.userId` → `user.id` en tabla, filtro y acciones. Agregada columna **Grupo(s)** con `useGroups`.
+- **Fix vista estudiante (dashboard/groups)**: `?.fullName` → `?.name` en display de docente.
+- **Fix student/cases**: Nombres de compañeros usan `u?.name || u?.fullName`. Agregado módulo+grupo en tarjetas. Eliminado badge "Pendiente" e info de carpeta. Dialog muestra `pdfName`.
+- **Fix student/groups/[id]**: `?.fullName` → `?.name`. Dialog de ejercicio muestra `pdfName`.
+- **Fix storage path**: `buildRepoPath`/`buildPersonalPath` ya no incluyen `{caseId-}` como prefijo. Archivos nuevos se guardan con solo su nombre original.
+- **Fix `assignCases` mensaje duplicados (3 intentos)**:
+  - Iteración 1: alert/confirm con nombres de estudiantes y títulos de casos
+  - Iteración 2: agregado grupo y módulo al mensaje. Fetch directo a API para datos frescos
+  - Iteración 3: vuelta a `allAssignments` del hook + alert diagnóstico con total de asignaciones, casos y estudiantes seleccionados si no hay coincidencias
+- **Fix `assignCases` salta if no coincidencias**: Agregado `filter + includes` en vez de `find` por par. Alert diagnóstico si `coincidencias.length === 0`.
+- Errores: Mensaje de duplicados no aparece — posiblemente `allAssignments` no tiene datos o los field names no matchean. Alert diagnóstico agregado para identificar causa.
+- Pendientes: Diagnosticar por qué `allAssignments` no detecta asignaciones existentes.
+
+### Sesión 37 - Julio 2026
+- **UserManager: Reorganización de columnas + mejoras**:
+  - Columna "Nombre" ahora incluye identificación debajo: "Nombre / ID" con `documentType documentNumber` en gris.
+  - Antigua columna "Identificación" reemplazada por "Grupo / Módulo", que muestra los grupos del usuario y su módulo asociado.
+  - Eliminada columna "Grupo(s)" (info movida a "Grupo / Módulo").
+  - Filtro de búsqueda unificado: busca por nombre, email, ID, grupo y módulo en un solo input.
+  - Eliminado filtro separado de grupo/módulo.
+  - Carga masiva: contraseña fija `123456` no editable, banner ámbar con recordatorio de cambio.
+- Build: `tsc --noEmit` pasa sin errores.
+
+### Sesión 38 - Julio 2026
+- **Fix `invalid input syntax for type timestamp with time zone: ''` al crear grupos**:
+  - **Causa raíz**: `GroupManager.tsx` enviaba `endDate: ""` (cadena vacía) en el payload, y la columna `end_date` en Supabase es `TIMESTAMPTZ` (no `TEXT` como dice la migración). PostgreSQL rechaza cadenas vacías en columnas timestamp.
+  - **Fix en `handleSave()`**: Ahora sanitiza el payload antes de enviar:
+    - `createdAt` → siempre valor válido (existente o `new Date().toISOString()`)
+    - `startDate`/`endDate` vacíos → se eliminan del payload (DB usa DEFAULT o NULL)
+  - Archivo: `components/admin/GroupManager.tsx:95-109`
+- **Fix `value` prop on `input` should not be null**:
+  - **Causa**: `formData.startDate`/`endDate` podían ser `null` (DB devuelve NULL en `start_date`/`end_date`). React no acepta `null` en `value`.
+  - **Fix**: `value={formData.startDate ?? ""}` y `value={formData.endDate ?? ""}`
+- **Reemplazada columna "Agregar Manualmente" por diálogo de registro de estudiante**:
+  - **Antes**: Input de texto que agregaba un nombre suelto a `members[]`
+  - **Ahora**: Botón "Registrar Estudiante" abre `Dialog` idéntico al de `UserManager` con rol fijo "Estudiante"
+  - Crea el usuario en Supabase Auth + `profiles` y lo agrega automáticamente al grupo
+  - Funciones agregadas: `syncToSupabase()`, `generateDeterministicId()`, `handleCreateStudent()`
+  - Archivo: `components/admin/GroupManager.tsx`
+- Build: `tsc --noEmit` pasa sin errores.
+
+### Sesión 39 - Julio 2026
+- **Contraseña fija `123456` para registro de usuarios**:
+  - `UserManager.tsx`: Eliminado input de contraseña editable. Campo disabled con valor fijo `123456`. Eliminada validación que exigía contraseña. Al crear, envía `defaultPassword`; al editar no envía password.
+  - `GroupManager.tsx`: Mismo cambio en diálogo "Nuevo Estudiante". Password fijo `123456` enviado a Supabase Auth. Eliminado `password` del estado `studentForm`.
+  - Aplica a todos los roles (student, teacher, admin). Usuarios cambian contraseña después en settings.
+- **Fix reportes admin/teacher: nombres de usuarios incorrectos**:
+  - Causa: `profile?.fullName` no existe (el campo DB es `name`). `dataService` devuelve `name`, no `fullName`.
+  - Fix admin `reports/page.tsx`: teachers usan `teacher.name`, estudiantes usan `profile?.name || profile?.email || memberId`.
+  - Fix teacher `reports/page.tsx`: misma corrección. Además optimizado `generateReports` con `Promise.all` (paralelo) y una sola carga de perfiles.
+- **Banco Ejercicios: alerta de estudiantes en múltiples casos del mismo grupo**:
+  - `ExerciseBank.tsx` `assignCases()`: Agregada detección de estudiantes ya asignados a OTROS casos dentro del mismo grupo.
+  - Muestra confirm dialog con nombres y casos existentes. Usuario elige si proceder o cancelar.
+  - Separada lógica en 2 fases: cross-case duplicates primero, exact duplicates después.
+- **Reorganización del layout**:
+  - Sidebar reducido de `w-64` a `w-52` (~19% menos).
+  - Outer container cambiado de `min-h-screen` a `h-screen overflow-hidden` (sin scroll de página).
+  - Sidebar: `overflow-y-auto` como único scroll de la app, `sticky top-0`, `h-full`.
+  - Main content: sin scroll propio, contenido fluye naturalmente.
+  - Build: `tsc --noEmit` pasa sin errores.
+
+### Sesión 41 - Julio 2026
+- **Landing Page: Todos los textos ahora editables desde Settings**:
+  - Agregadas ~60 nuevas keys en `lib/appTexts.ts` con prefijo `marketing.*` cubriendo textos de Navbar, Hero, Simulators, Access, Contact, Footer y Background.
+  - Navbar: brand text, brand name, nav links, login button.
+  - Hero: 4 líneas principales, badge, descripción, botón y flecha.
+  - Simulators badge, título, hint, 5 títulos de cards y 5 descripciones.
+  - Access: 2 partes del título, descripción, botón.
+  - Contact: badge, título, subtítulo, mensajes de éxito, labels y placeholders de 3 campos, botón submit.
+  - Footer: brand name, descripción, copyright, badge seguridad, email, 3 títulos de columna y 9 links.
+  - Background: alt text de imagen.
+- **7 componentes de marketing actualizados para usar `useAppText().t()`**:
+  - `Navbar.tsx`, `Hero.tsx`, `SimulatorsGrid.tsx`, `AccessSection.tsx`, `ContactSection.tsx`, `Footer.tsx`, `InteractiveBackground.tsx`.
+  - Arrays de constantes (`heroLines`, `simulators`, `footerLinks`) convertidos a `useMemo` con `t()`.
+- **LandingPageDesigner.tsx actualizado**: Textos tab ahora muestra 7 secciones (Barra de Navegación, Hero, Simuladores, Acceso, Contacto, Footer, Fondo) con conteo de textos por sección.
+- **Columna `location` en `app_texts`**: Creada migración SQL (`supabase_migration_add_location_to_app_texts.sql`) que crea la tabla `app_texts` (no existía en Supabase) con columnas `id`, `key`, `value`, `location`, `created_at`, `updated_at`, más RLS policies y trigger.
+  - `hooks/useData.ts`: tipos `useAppTexts()` y `useCreateOrUpdateAppText()` actualizados para incluir `location`.
+  - `LandingPageDesigner.tsx`: cada tarjeta de texto ahora tiene un campo "Ubicación" debajo del textarea. Se guarda automáticamente al hacer blur junto con el valor actual.
+  - `tsc --noEmit` pasa.
+- Errores: Ninguno.
+- Build: `tsc --noEmit` pasa sin errores.
+
+### Sesión 43 - Julio 2026
+- **523 iconos Lucide**: Expandido `lib/iconMap.ts` de 13 a 523 iconos (negocio, educación, transporte, tecnología, objetos).
+- **DynamicIcon**: Creado `components/shared/DynamicIcon.tsx` — renderiza `<img>` si el valor es URL (PNG subido) o el LucideIcon correspondiente. Reemplazado el patrón IIFE `iconMap[t(...)]` en los 5 componentes marketing.
+- **IconPicker.tsx**: Agregado buscador textual (`<Input>`), grid con scroll infinito, y botón "Subir PNG personalizado" que sube a Supabase Storage y almacena URL.
+- **Iconos movidos a pestaña Fondo**: En LandingPageDesigner, las keys `.icon` se filtran de la pestaña Textos y se muestran en un card dedicado en la pestaña Fondo.
+- **Secciones card funcional**: Conectado color picker + slider de opacidad a keys persistentes (`marketing.bg.{section}_color/opacity`). Orden reordenado a Hero → Simuladores → Contacto → Acceso → Footer.
+- **Keys agregadas a appTexts.ts**: `hero_color/opacity`, `simulators_color/opacity`, `contact_color/opacity`, `access_color/opacity`, `footer_color/opacity`.
+- **4 componentes leen background desde stored keys**: Hero, SimulatorsGrid, AccessSection, ContactSection, Footer — ahora usan `t('marketing.bg.{section}_color', fallback)` + `t('marketing.bg.{section}_opacity', fallback)` en vez de opacidades hardcodeadas.
+- **Glassmorphism premium**: SimulatorsGrid y AccessSection unificados con `backdrop-blur-sm`, overlay depth gradient (`from-white/3% via-transparent to-black/8%`), radial glow gold, cards con `backdropFilter: blur(12px)` y borde gold glow al hover. Acceso: removido gradient lineal duplicado, mantenido parallax radial gold.
+- Errores: Ninguno. `tsc --noEmit` pasa.
+- Pendientes: N/A.
+
+### Sesión 42 - Julio 2026
+- **Restaurado Footer.tsx**: Recuperada la estructura original con grid de links (Plataforma, Legal, Soporte), branding SIM_COMEX, badges de seguridad. Colores dinámicos vía `useDesignSettings()` + `hexToRgba()`.
+- **Fix Navbar hover bug**: `e.target` → `e.currentTarget` en `Navbar.tsx:60-61`. Las letras individuales ya no se quedan con color de hover permanentemente.
+- **LandingPageDesigner**: Eliminados nombres fijos de presets de paleta y labels de color pickers individuales. Eliminado card "Colores de Texto".
+- **Selector de fondo**: Acepta solo PNG, sube a Supabase Storage vía `/api/storage/upload`, guarda URL en `marketing.bg.url`. Image/png agregado a `ALLOWED_TYPES`.
+- **Secciones de fondo reordenadas**: Hero → Simuladores → Contacto → Acceso → Footer.
+- **Colores de texto auto-derivados de la paleta**: `useDesignSettings.ts` ahora calcula `textColors` usando `getContrastColor()` (luminance-based) en vez de valores fijos. El color de texto es navy sobre cream, cream sobre navy. Agregado `getLuminance()` y `getContrastColor()` a `colorUtils.ts`.
+- **Iconos editables**: Creado `lib/iconMap.ts` con mapeo de 13 iconos Lucide. Creado `components/admin/IconPicker.tsx` con selector visual vía Popover. Agregadas 12 keys de iconos a `appTexts.ts`. LandingPageDesigner detecta keys `.icon` y renderiza `IconPicker` en vez de Textarea. Todos los 5 componentes marketing actualizados para leer iconos dinámicamente desde `appTexts` a través de `iconMap[t(key)]`.
+- Build: `tsc --noEmit` pasa sin errores.
+
+---
+
+### Sesión 44 - Julio 2026
+- **Fix schema cache error al crear módulos**: Reemplazado `@supabase/supabase-js` client en `app/api/data/[table]/route.ts` por `fetch` directo a REST API de Supabase.
+  - `supabase.from(table).upsert(body).select()` fallaba con "Could not find the '0' column of 'modules' in the schema cache" aunque la tabla existía y GET funcionaba.
+  - GET handler reescrito para usar raw fetch con headers `apikey` + `Authorization: Bearer` (service_role_key).
+  - POST handler usa `Prefer: return=representation` y extrae `value` del response paginado de Supabase.
+  - DELETE handler usa `DELETE /rest/v1/table?id=eq.xxx`.
+  - `fetchFromSupabase()` normaliza response: extrae `.value` del formato `{ value: [...], Count: N }`.
+- **Fix controlled/uncontrolled input**: `ModuleEditor.tsx` — defensivo con `?? ''` en `useEffect` (title, description, status) y en section title Input. Evita que spread de `fetchedModule` pise campos con undefined/null.
+- Errores: Schema cache de PostgREST no se refrescaba ni con `NOTIFY pgrst, 'reload schema'` ni reiniciando proyecto. Solución: bypass del cliente supabase-js.
+- Pendientes: N/A.
 
 ## Notas importantes para nuevas IAs
 

@@ -160,7 +160,7 @@ export default function StudentReportsPage() {
             <div className="flex flex-col gap-2">
                 <h1 className="text-3xl font-bold flex items-center gap-2">
                     <BarChart className="w-8 h-8 text-primary" />
-                    {t('student.reports.title', 'Mis Reportes de Validación')}
+                    {t('student.reports.title', 'Mis Evaluaciones')}
                 </h1>
                 <p className="text-muted-foreground">{t('student.reports.subtitle', 'Consulta la consistencia de los datos en tus simulaciones.')}</p>
             </div>

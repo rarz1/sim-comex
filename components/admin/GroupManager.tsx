@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useGroups, useModules, useUsers, useTemplates, useCreateOrUpdateGroup, useDeleteGroup } from "@/hooks/useData";
+import { dataService } from "@/lib/services/dataService";
 import { Group } from "@/types/group";
 import { Module } from "@/types/modules";
 import { Button } from "@/components/ui/button";
@@ -11,7 +13,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Plus, Trash2, Edit, Save, Users, Calendar, BookOpen, ArrowLeft, FileText } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Plus, Trash2, Edit, Save, Users, Calendar, BookOpen, ArrowLeft, FileText, Loader2 } from "lucide-react";
 import { formatDate } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
@@ -37,7 +40,10 @@ export function GroupManager() {
     });
 
     const [memberFilter, setMemberFilter] = useState("");
-    const [manualName, setManualName] = useState("");
+    const [showStudentDialog, setShowStudentDialog] = useState(false);
+    const [studentForm, setStudentForm] = useState({ fullName: "", email: "", documentType: "CC", documentNumber: "" });
+    const [studentSyncing, setStudentSyncing] = useState(false);
+    const queryClient = useQueryClient();
 
     const createOrUpdateGroup = useCreateOrUpdateGroup();
     const deleteGroup = useDeleteGroup();
@@ -99,7 +105,13 @@ export function GroupManager() {
         }
 
         try {
-            await createOrUpdateGroup.mutateAsync(formData);
+            const payload: Record<string, any> = {
+                ...formData,
+                createdAt: formData.createdAt || new Date().toISOString(),
+            };
+            if (!payload.startDate) delete payload.startDate;
+            if (!payload.endDate) delete payload.endDate;
+            await createOrUpdateGroup.mutateAsync(payload);
             toast.success("Grupo guardado correctamente");
         } catch (err: any) {
             console.error("Error saving group:", err);
@@ -120,7 +132,6 @@ export function GroupManager() {
                 members: [...(prev.members || []), identifier]
             }));
         }
-        setManualName(""); // Clear manual input
     };
 
     const removeStudent = (name: string) => {
@@ -128,6 +139,83 @@ export function GroupManager() {
             ...prev,
             members: (prev.members || []).filter(m => m !== name)
         }));
+    };
+
+    const generateDeterministicId = (email: string, role: string) => {
+        const lower = email.toLowerCase();
+        const prefix = lower.split('@')[0].replace(/[^a-z0-9]/g, '');
+        return `${role}-${prefix}`;
+    };
+
+    const syncToSupabase = async (usersList: { email: string; password?: string; fullName: string; role: string; documentType?: string; documentNumber?: string }[]) => {
+        const res = await fetch('/api/admin/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ users: usersList }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error de conexión');
+        return data.results as { email: string; success: boolean; error?: string; id?: string }[];
+    };
+
+    const handleCreateStudent = async () => {
+        const email = (studentForm.email || '').trim().toLowerCase();
+        if (!email || !studentForm.fullName) {
+            toast.error("Nombre y Email son obligatorios");
+            return;
+        }
+        setStudentSyncing(true);
+
+        try {
+            const results = await syncToSupabase([{
+                email,
+                password: "123456",
+                fullName: studentForm.fullName,
+                role: 'student',
+                documentType: studentForm.documentType,
+                documentNumber: studentForm.documentNumber,
+            }]);
+
+            const result = results[0];
+            let authId: string | undefined;
+
+            if (!result.success && result.error?.includes('ya existe')) {
+                toast.warning(`${email}: ${result.error}. Se agregará al grupo igual.`);
+            } else if (!result.success) {
+                toast.error(`Error en Auth: ${result.error}`);
+                setStudentSyncing(false);
+                return;
+            } else if (result.id) {
+                authId = result.id;
+            }
+
+            const userId = authId || generateDeterministicId(email, 'student');
+
+            if (authId) {
+                await dataService.save('profiles', {
+                    id: userId,
+                    email,
+                    name: studentForm.fullName,
+                    role: 'student',
+                    documentType: studentForm.documentType,
+                    documentNumber: studentForm.documentNumber,
+                    createdAt: new Date().toISOString()
+                });
+            }
+
+            addStudent(userId);
+
+            queryClient.invalidateQueries({ queryKey: ['profiles'] });
+
+            toast.success(`Estudiante ${studentForm.fullName} creado y agregado al grupo`);
+            setShowStudentDialog(false);
+            setStudentForm({ fullName: "", email: "", documentType: "CC", documentNumber: "" });
+        } catch (error: any) {
+            console.error(error);
+            toast.error(error.message || "Error al crear estudiante");
+        } finally {
+            setStudentSyncing(false);
+        }
     };
 
     if (isEditing) {
@@ -178,7 +266,7 @@ export function GroupManager() {
                                     <Label>Fecha Inicio</Label>
                                     <Input
                                         type="date"
-                                        value={formData.startDate}
+                                        value={formData.startDate ?? ""}
                                         onChange={e => setFormData({ ...formData, startDate: e.target.value })}
                                     />
                                 </div>
@@ -186,7 +274,7 @@ export function GroupManager() {
                                     <Label>Fecha Fin</Label>
                                     <Input
                                         type="date"
-                                        value={formData.endDate}
+                                        value={formData.endDate ?? ""}
                                         onChange={e => setFormData({ ...formData, endDate: e.target.value })}
                                     />
                                 </div>
@@ -205,9 +293,9 @@ export function GroupManager() {
                                         <SelectValue placeholder="Seleccione un docente" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {availableTeachers.filter(t => t.userId && t.userId.trim() !== "").map(t => (
-                                            <SelectItem key={t.userId} value={t.userId}>
-                                                {t.name} <span className="text-muted-foreground ml-2 text-xs">({t.userId})</span>
+                                        {availableTeachers.filter(t => t.id).map(t => (
+                                            <SelectItem key={t.id} value={t.id}>
+                                                {t.name} <span className="text-muted-foreground ml-2 text-xs">({t.id})</span>
                                             </SelectItem>
                                         ))}
                                         {availableTeachers.length === 0 && (
@@ -253,12 +341,12 @@ export function GroupManager() {
                                         </p>
                                     )}
                                     {filteredStudents.map(student => {
-                                        const isAdded = (formData.members || []).includes(student.userId);
+                                        const isAdded = (formData.members || []).includes(student.id);
                                         return (
                                             <div
                                                 key={student.id}
                                                 className={`flex justify-between items-center p-2 rounded text-sm ${isAdded ? 'opacity-50 cursor-not-allowed bg-muted' : 'hover:bg-primary/10 cursor-pointer'}`}
-                                                onClick={() => !isAdded && addStudent(student.userId)}
+                                                onClick={() => !isAdded && addStudent(student.id)}
                                             >
                                                 <span>{student.name}</span>
                                                 <Button size="icon" variant="ghost" className="h-6 w-6" disabled={isAdded}>
@@ -270,27 +358,19 @@ export function GroupManager() {
                                 </div>
                             </div>
 
-                            {/* LIST 2: Manual Input */}
+                            {/* LIST 2: Register New Student */}
                             <div className="border rounded-lg flex flex-col h-[350px] bg-muted/10">
                                 <div className="p-3 border-b bg-muted/20">
-                                    <Label className="text-xs font-semibold uppercase text-muted-foreground">2. Agregar Manualmente</Label>
+                                    <Label className="text-xs font-semibold uppercase text-muted-foreground">2. Registrar Nuevo</Label>
                                 </div>
                                 <div className="p-4 flex flex-col gap-4 items-center justify-center flex-1">
                                     <div className="w-full text-center space-y-2">
                                         <Users className="w-8 h-8 mx-auto text-muted-foreground/50" />
-                                        <p className="text-xs text-muted-foreground">Si el estudiante no está en la base de datos, agrégalo escribiendo su nombre.</p>
+                                        <p className="text-xs text-muted-foreground">Si el estudiante no existe en el sistema, créalo aquí y se agregará automáticamente al grupo.</p>
                                     </div>
-                                    <div className="w-full space-y-2">
-                                        <Input
-                                            placeholder="Nombre completo..."
-                                            value={manualName}
-                                            onChange={e => setManualName(e.target.value)}
-                                            onKeyDown={e => e.key === 'Enter' && addStudent(manualName)}
-                                        />
-                                        <Button className="w-full" variant="secondary" onClick={() => addStudent(manualName)} disabled={!manualName.trim()}>
-                                            <Plus className="mr-2 h-4 w-4" /> Agregar
-                                        </Button>
-                                    </div>
+                                    <Button className="w-full" onClick={() => setShowStudentDialog(true)}>
+                                        <Plus className="mr-2 h-4 w-4" /> Registrar Estudiante
+                                    </Button>
                                 </div>
                             </div>
 
@@ -309,7 +389,7 @@ export function GroupManager() {
                                         </p>
                                     )}
                                     {(formData.members || []).map((member, idx) => {
-                                        const resolvedName = allUsers?.find(u => u.userId === member)?.name || member;
+                                        const resolvedName = allUsers?.find(u => u.id === member)?.name || member;
                                         return (
                                             <div key={idx} className="flex justify-between items-center p-2 hover:bg-destructive/5 rounded group text-sm border border-transparent hover:border-destructive/20 transition-colors">
                                                 <span className="font-medium">{resolvedName}</span>
@@ -328,6 +408,80 @@ export function GroupManager() {
                             </div>
                         </div>
                     </div>
+
+                    <Dialog open={showStudentDialog} onOpenChange={setShowStudentDialog}>
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle>Nuevo Estudiante</DialogTitle>
+                                <DialogDescription>
+                                    Ingrese los datos del estudiante. Se creará en Supabase Auth y se agregará automáticamente al grupo.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="grid gap-4 py-4">
+                                <div className="grid grid-cols-4 items-center gap-4">
+                                    <Label className="text-right">Nombre</Label>
+                                    <Input
+                                        className="col-span-3"
+                                        value={studentForm.fullName}
+                                        onChange={e => setStudentForm({ ...studentForm, fullName: e.target.value })}
+                                    />
+                                </div>
+                                <div className="grid grid-cols-4 items-center gap-4">
+                                    <Label className="text-right">Email</Label>
+                                    <Input
+                                        className="col-span-3"
+                                        value={studentForm.email}
+                                        onChange={e => setStudentForm({ ...studentForm, email: e.target.value })}
+                                    />
+                                </div>
+                                <div className="grid grid-cols-4 items-center gap-4">
+                                    <Label className="text-right">Contraseña</Label>
+                                    <Input
+                                        className="col-span-3"
+                                        type="text"
+                                        value="123456"
+                                        disabled
+                                    />
+                                </div>
+                                <div className="grid grid-cols-4 items-center gap-4">
+                                    <Label className="text-right">Rol</Label>
+                                    <div className="col-span-3">
+                                        <Input value="Estudiante" disabled className="bg-muted" />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-4 items-center gap-4">
+                                    <Label className="text-right">Doc. ID</Label>
+                                    <div className="col-span-3 flex gap-2">
+                                        <Select
+                                            value={studentForm.documentType}
+                                            onValueChange={v => setStudentForm({ ...studentForm, documentType: v })}
+                                        >
+                                            <SelectTrigger className="w-[80px]">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="CC">CC</SelectItem>
+                                                <SelectItem value="TI">TI</SelectItem>
+                                                <SelectItem value="CE">CE</SelectItem>
+                                                <SelectItem value="PASSPORT">Pasaporte</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                        <Input
+                                            placeholder="Número"
+                                            value={studentForm.documentNumber}
+                                            onChange={e => setStudentForm({ ...studentForm, documentNumber: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                            <DialogFooter>
+                                <Button onClick={handleCreateStudent} disabled={studentSyncing}>
+                                    {studentSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                                    {studentSyncing ? "Creando..." : "Guardar"}
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
 
                 </CardContent>
                 {/* Actions */}
@@ -410,7 +564,7 @@ export function GroupManager() {
                                         </TableCell>
                                         <TableCell>
                                             <div className="font-medium text-sm whitespace-normal break-words">
-                                                {allUsers?.find(u => u.userId === group.teacherId)?.name || group.teacherId}
+                                                {allUsers?.find(u => u.id === group.teacherId)?.name || group.teacherId}
                                             </div>
                                         </TableCell>
                                         <TableCell>

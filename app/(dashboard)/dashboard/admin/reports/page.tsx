@@ -93,25 +93,23 @@ export default function AdminReportsPage() {
     const generateReports = async (group: Group, moduleId: string) => {
         setGenerating(true);
         try {
-            const summaries = [];
+            const allProfiles = await dataService.getAll<any>('profiles').catch(() => []);
 
-            for (const memberId of group.members) {
+            const reportTasks = group.members.map(async (memberId) => {
                 const report = await validationService.generateStudentReport(memberId, moduleId, group.id);
+                const profile = allProfiles.find((p: any) => p.id === memberId);
+                const studentName = profile?.name || profile?.email || memberId;
 
-                let studentName = memberId;
-                try {
-                    const profile = await dataService.getById<any>('profiles', memberId);
-                    if (profile?.fullName) studentName = profile.fullName;
-                } catch {}
-
-                summaries.push({
+                return {
                     studentId: memberId,
-                    studentName: studentName,
+                    studentName,
                     score: report.score,
                     lastUpdated: new Date(report.generatedAt).toLocaleDateString(),
                     fullReport: report
-                });
-            }
+                };
+            });
+
+            const summaries = await Promise.all(reportTasks);
 
             summaries.sort((a, b) => a.score - b.score);
             setStudentSummaries(summaries);
@@ -145,7 +143,7 @@ export default function AdminReportsPage() {
         <div className="container mx-auto p-6 space-y-6">
             <div className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight">Reportes Administrativos</h1>
+                    <h1 className="text-3xl font-bold tracking-tight">Evaluaciones</h1>
                     <p className="text-muted-foreground">Supervisión global de validación de datos.</p>
                 </div>
                 <Button variant="outline" onClick={refreshReports} disabled={!selectedGroup || generating}>
@@ -172,7 +170,7 @@ export default function AdminReportsPage() {
                                 <SelectItem value="all">Todos los docentes</SelectItem>
                                 {teachers.map(teacher => (
                                     <SelectItem key={teacher.id} value={teacher.id}>
-                                        {teacher.fullName}
+                                        {teacher.name || teacher.email || teacher.id}
                                     </SelectItem>
                                 ))}
                             </SelectContent>

@@ -7,10 +7,12 @@ function toSnakeCase(key: string): string {
 }
 
 function mapKeys(obj: any, transform: (k: string) => string): any {
-  if (Array.isArray(obj)) return obj;
+  if (Array.isArray(obj)) {
+    return obj.map(item => mapKeys(item, transform));
+  }
   if (obj && typeof obj === 'object' && !(obj instanceof Date)) {
     return Object.fromEntries(
-      Object.entries(obj).map(([k, v]) => [transform(k), v])
+      Object.entries(obj).map(([k, v]) => [transform(k), mapKeys(v, transform)])
     );
   }
   return obj;

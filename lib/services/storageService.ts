@@ -36,11 +36,11 @@ export const storageService = {
         return url.startsWith('http') && url.includes(`/${BUCKET}/`);
     },
 
-    buildRepoPath(folderId: string, caseId: string, fileName: string): string {
-        return `repository/${folderId}/${caseId}-${fileName}`;
+    buildRepoPath(folderId: string, _caseId: string, fileName: string): string {
+        return `repository/${folderId}/${fileName}`;
     },
 
-    buildPersonalPath(userId: string, folderId: string, caseId: string, fileName: string): string {
-        return `personal/${userId}/${folderId}/${caseId}-${fileName}`;
+    buildPersonalPath(userId: string, folderId: string, _caseId: string, fileName: string): string {
+        return `personal/${userId}/${folderId}/${fileName}`;
     },
 };

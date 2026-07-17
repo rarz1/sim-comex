@@ -39,6 +39,7 @@ export function Canvas({
         initialX: number; initialY: number;
         initialW: number; initialH: number;
     } | null>(null);
+    const lastCanvasClick = useRef(0);
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -99,17 +100,21 @@ export function Canvas({
     }, [activeFieldId, template]); // Re-run when activeField changes or template (for latest coords)
 
     const handleCanvasDoubleClick = (e: React.MouseEvent) => {
-        // Only create field if we are double clicking on the image container directly
         if (draggingId || resizingId || !pdfImage || !imageContainerRef.current) return;
+
+        const now = Date.now();
+        if (now - lastCanvasClick.current < 300) return;
+        lastCanvasClick.current = now;
+
+        const target = e.target as HTMLElement;
+        if (target.closest('[data-field]')) return;
 
         const rect = imageContainerRef.current.getBoundingClientRect();
         const xPct = (e.clientX - rect.left) / rect.width;
         const yPct = (e.clientY - rect.top) / rect.height;
 
-        // Ensure within bounds
         if (xPct < 0 || xPct > 1 || yPct < 0 || yPct > 1) return;
 
-        // Create new field
         const newFieldId = crypto.randomUUID();
         const sectionIdToUse = currentSectionId || template.schema.sections[0]?.id;
 
@@ -193,6 +198,7 @@ export function Canvas({
     };
 
     const handleMouseUp = () => {
+        if (draggingId || resizingId) lastCanvasClick.current = Date.now();
         setDraggingId(null);
         setResizingId(null);
         setInteractionStart(null);
@@ -293,6 +299,7 @@ export function Canvas({
                     {placedFields.map(field => (
                         <div
                             key={field.id}
+                            data-field="true"
                             onMouseDown={(e) => startDragging(e, field)}
                             style={{
                                 position: 'absolute',

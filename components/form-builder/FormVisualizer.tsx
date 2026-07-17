@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useRef } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Printer, Eye, X } from "lucide-react";
+import { Printer, Eye, X, ArrowLeft } from "lucide-react";
 import { DocumentTemplate } from "@/types/form";
 
 interface FormVisualizerProps {
@@ -110,6 +110,11 @@ export function FormVisualizer({ template, formData, trigger }: FormVisualizerPr
                         Vista Preliminar: {template.title}
                     </DialogTitle>
                     <div className="flex gap-2 mr-6">
+                        <DialogClose asChild>
+                            <Button variant="outline" className="h-10 px-4 font-medium">
+                                Cerrar
+                            </Button>
+                        </DialogClose>
                         <Button onClick={handlePrint} className="font-bold bg-primary hover:bg-primary/90 shadow-lg px-6 h-10">
                             <Printer className="w-4 h-4 mr-2" /> Imprimir Documento
                         </Button>
@@ -144,6 +149,28 @@ export function FormVisualizer({ template, formData, trigger }: FormVisualizerPr
                                     </div>
                                 );
                             })}
+                        </div>
+                    ) : template.schema?.sections?.length ? (
+                        <div className="w-[1000px] mx-auto space-y-6 bg-white rounded-xl p-8 shadow-lg ring-1 ring-black/5">
+                            {template.schema.sections.map((sec: any, si: number) => (
+                                <div key={sec.id || si}>
+                                    <h3 className="text-lg font-bold text-primary mb-3 pb-2 border-b">{sec.title || `Sección ${si + 1}`}</h3>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        {sec.fields?.filter((f: any) => f.id).map((field: any) => (
+                                            <div key={field.id} className="space-y-1 p-3 bg-muted/30 rounded-lg">
+                                                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{field.label}</label>
+                                                <p className="text-sm font-medium text-foreground">
+                                                    {formData[field.id] ? (
+                                                        <span className="text-primary">{formData[field.id]}</span>
+                                                    ) : (
+                                                        <span className="text-muted-foreground italic">—</span>
+                                                    )}
+                                                </p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     ) : (
                         <div className="flex flex-col items-center justify-center py-20 opacity-50">

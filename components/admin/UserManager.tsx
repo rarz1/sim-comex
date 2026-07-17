@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useUsers } from "@/hooks/useData";
+import { useState, useEffect, useMemo } from "react";
+import { useUsers, useGroups, useModules } from "@/hooks/useData";
 import { dataService } from "@/lib/services/dataService";
 import { useQueryClient } from "@tanstack/react-query";
 import { UserProfile, UserRole } from "@/types/roles";
@@ -24,6 +24,7 @@ export function UserManager() {
 
     const [searchTerm, setSearchTerm] = useState("");
     const [roleFilter, setRoleFilter] = useState<UserRole | "all">("all");
+
     const [isEditing, setIsEditing] = useState(false);
     const [syncing, setSyncing] = useState(false);
 
@@ -39,16 +40,31 @@ export function UserManager() {
 
     const [bulkText, setBulkText] = useState("");
     const [bulkPreview, setBulkPreview] = useState<any[]>([]);
-    const [defaultPassword, setDefaultPassword] = useState("123456");
+    const defaultPassword = "123456";
     const [bulkSyncing, setBulkSyncing] = useState(false);
 
     const { data: users } = useUsers() as { data: any[] };
+    const { data: groups } = useGroups();
+    const { data: modules } = useModules();
     const queryClient = useQueryClient();
 
+    const moduleMap = useMemo(() => {
+        const map: Record<string, string> = {};
+        modules?.forEach((m: any) => { map[m.id] = m.title; });
+        return map;
+    }, [modules]);
+
     const filteredUsers = users?.filter(u => {
-        const matchesSearch = u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            u.userId.toLowerCase().includes(searchTerm.toLowerCase());
+        const userGroups = groups?.filter((g: any) => (g.members || []).includes(u.id)) || [];
+        const groupModuleStr = userGroups.map((g: any) => {
+            const modName = moduleMap[g.moduleId] || '';
+            return `${g.name} ${modName}`;
+        }).join(' ').toLowerCase();
+        const q = searchTerm.toLowerCase();
+        const matchesSearch = (u.name || '').toLowerCase().includes(q) ||
+            (u.email || '').toLowerCase().includes(q) ||
+            (u.id || '').toLowerCase().includes(q) ||
+            groupModuleStr.includes(q);
         const matchesRole = roleFilter === "all" || u.role === roleFilter;
         return matchesSearch && matchesRole;
     });
@@ -77,11 +93,6 @@ export function UserManager() {
             toast.error("Nombre y Email son obligatorios");
             return;
         }
-        if (!formData.id && !formData.password) {
-            toast.error("Debe ingresar una contraseña para el nuevo usuario");
-            return;
-        }
-
         if (formData.id && !isAdmin) {
             toast.error("Los docentes no pueden modificar usuarios.");
             return;
@@ -97,7 +108,7 @@ export function UserManager() {
             const results = await syncToSupabase([{
                 id: formData.id,
                 email,
-                password: formData.password || undefined,
+                password: formData.id ? undefined : defaultPassword,
                 fullName: formData.fullName,
                 role,
                 documentType: formData.documentType,
@@ -120,7 +131,7 @@ export function UserManager() {
 
             toast.success("Usuario guardado correctamente");
             setIsEditing(false);
-            setFormData({ email: '', fullName: '', role: 'student', documentType: 'CC', documentNumber: '', password: '', canCreateUsers: false });
+            setFormData({ email: '', fullName: '', role: 'student', documentType: 'CC', documentNumber: '', canCreateUsers: false });
         } catch (error: any) {
             console.error(error);
             toast.error(error.message || "Error al guardar usuario");
@@ -132,7 +143,7 @@ export function UserManager() {
     const handleEdit = (user: any) => {
         if (!isAdmin) return; // Prevent edits in UI for teachers
         setFormData({
-            id: user.userId,
+            id: user.id,
             email: user.email,
             fullName: user.name,
             role: user.role,
@@ -140,19 +151,18 @@ export function UserManager() {
             documentNumber: user.documentNumber || '',
             createdAt: user.createdAt,
             canCreateUsers: user.canCreateUsers || false,
-            password: '',
         });
         setIsEditing(true);
     };
 
-    const handleDelete = async (userId: string) => {
+    const handleDelete = async (id: string) => {
         if (!isAdmin) {
             toast.error("No autorizado para eliminar usuarios");
             return;
         }
-        if (confirm(`¿Eliminar usuario ${userId}?`)) {
+        if (confirm(`¿Eliminar usuario ${id}?`)) {
             try {
-                await dataService.delete('profiles', userId);
+                await dataService.delete('profiles', id);
                 queryClient.invalidateQueries({ queryKey: ['profiles'] });
                 toast.success("Usuario eliminado");
             } catch {
@@ -291,44 +301,58 @@ export function UserManager() {
                                 </Select>
                             </div>
                             <Button onClick={() => {
-                                setFormData({ email: '', fullName: '', role: 'student', documentType: 'CC', documentNumber: '', password: '' });
+                                setFormData({ email: '', fullName: '', role: 'student', documentType: 'CC', documentNumber: '' });
                                 setIsEditing(true);
                             }}>
                                 <Plus className="mr-2 h-4 w-4" /> Nuevo Usuario
                             </Button>
                         </CardHeader>
-                        <CardContent>
-                            <Table>
-                                 <TableHeader>
-                                     <TableRow>
-                                         <TableHead>Nombre</TableHead>
-                                         <TableHead>Email / Rol</TableHead>
-                                         <TableHead>Identificación</TableHead>
-                                         <TableHead>ID Sistema</TableHead>
-                                         {isAdmin && <TableHead className="text-right">Acciones</TableHead>}
-                                     </TableRow>
-                                 </TableHeader>
+                        <CardContent className="overflow-x-hidden">
+                            <Table className="w-full table-fixed">
+                                  <TableHeader>
+                                      <TableRow>
+                                          <TableHead className="w-[30%] min-w-[160px]">Nombre / ID</TableHead>
+                                          <TableHead className="w-[25%] min-w-[140px]">Email / Rol</TableHead>
+                                          <TableHead className="w-[25%] min-w-[150px]">Grupo / Módulo</TableHead>
+                                          <TableHead className="w-[10%]">ID</TableHead>
+                                          {isAdmin && <TableHead className="w-[10%] text-right">Acciones</TableHead>}
+                                      </TableRow>
+                                  </TableHeader>
                                  <TableBody>
-                                     {filteredUsers?.map(user => (
-                                         <TableRow key={user.userId} className={`cursor-pointer hover:bg-muted/50 ${!isAdmin ? 'cursor-default' : ''}`} onClick={() => isAdmin && handleEdit(user)}>
-                                             <TableCell className="font-medium">{user.name}</TableCell>
-                                             <TableCell>
-                                                 <div className="flex flex-col">
-                                                     <span>{user.email}</span>
-                                                     <span className="text-xs text-muted-foreground capitalize">{user.role}</span>
-                                                 </div>
-                                             </TableCell>
-                                             <TableCell>{user.documentType} {user.documentNumber}</TableCell>
-                                             <TableCell className="font-mono text-xs">{user.userId}</TableCell>
-                                             {isAdmin && (
-                                                 <TableCell className="text-right">
-                                                     <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10" onClick={(e) => { e.stopPropagation(); handleDelete(user.userId); }}>
-                                                         <Trash2 className="h-4 w-4" />
-                                                     </Button>
-                                                 </TableCell>
-                                             )}
-                                         </TableRow>
-                                     ))}
+                                      {filteredUsers?.map(user => {
+                                          const userGroups = groups?.filter((g: any) => (g.members || []).includes(user.id)) || [];
+                                          return (
+                                          <TableRow key={user.id} className={`cursor-pointer hover:bg-muted/50 ${!isAdmin ? 'cursor-default' : ''}`} onClick={() => isAdmin && handleEdit(user)}>
+                                              <TableCell className="font-medium">
+                                                  <span className="truncate block max-w-[200px]" title={user.name}>{user.name}</span>
+                                                  {user.documentNumber ? <span className="text-xs text-muted-foreground block truncate max-w-[200px]">{user.documentType} {user.documentNumber}</span> : null}
+                                              </TableCell>
+                                              <TableCell>
+                                                  <div className="flex flex-col">
+                                                      <span className="truncate max-w-[180px]" title={user.email}>{user.email}</span>
+                                                      <span className="text-xs text-muted-foreground capitalize">{user.role}</span>
+                                                  </div>
+                                              </TableCell>
+                                              <TableCell>
+                                                  {userGroups.length > 0
+                                                      ? userGroups.map((g: any) => (
+                                                          <div key={g.id} className="text-xs leading-tight">
+                                                              <div className="font-medium truncate max-w-[200px]" title={g.name}>{g.name}</div>
+                                                              {g.moduleId && moduleMap[g.moduleId] && <div className="text-muted-foreground truncate max-w-[200px]" title={moduleMap[g.moduleId]}>{moduleMap[g.moduleId]}</div>}
+                                                          </div>
+                                                        ))
+                                                      : <span className="text-xs text-muted-foreground">—</span>}
+                                              </TableCell>
+                                              <TableCell className="font-mono text-[10px] max-w-[90px] truncate" title={user.id}>{user.id}</TableCell>
+                                              {isAdmin && (
+                                                  <TableCell className="text-right">
+                                                      <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10" onClick={(e) => { e.stopPropagation(); handleDelete(user.id); }}>
+                                                          <Trash2 className="h-4 w-4" />
+                                                      </Button>
+                                                  </TableCell>
+                                              )}
+                                          </TableRow>
+                                      )})}
                                     {(!filteredUsers || filteredUsers.length === 0) && (
                                         <TableRow>
                                             <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
@@ -374,10 +398,9 @@ export function UserManager() {
                                         <Label className="text-right">Contraseña</Label>
                                         <Input
                                             className="col-span-3"
-                                            type="password"
-                                            value={formData.password || ''}
-                                            onChange={e => setFormData({ ...formData, password: e.target.value })}
-                                            placeholder="Mínimo 6 caracteres"
+                                            type="text"
+                                            value="123456"
+                                            disabled
                                         />
                                     </div>
                                 )}
@@ -457,20 +480,17 @@ export function UserManager() {
                                 Importación Masiva
                             </CardTitle>
                             <CardDescription>
-                                Copie y pegue datos desde Excel. Todos los usuarios se crearán en Supabase Auth con la contraseña por defecto.<br />
+                                Copie y pegue datos desde Excel. Todos los usuarios se crearán en Supabase Auth.<br />
                                 Formato: <strong>Nombre Completo | Email | Tipo Doc (Opc.) | Num Doc (Opc.) | Rol (Opc.)</strong>
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            <div className="flex items-center gap-4">
-                                <Label className="shrink-0">Contraseña por defecto:</Label>
-                                <Input
-                                    className="w-[200px]"
-                                    type="password"
-                                    value={defaultPassword}
-                                    onChange={e => setDefaultPassword(e.target.value)}
-                                    placeholder="123456"
-                                />
+                            <div className="bg-amber-50 text-amber-800 p-4 rounded-md flex gap-2 text-sm border border-amber-200">
+                                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                                <div>
+                                    <p className="font-semibold">Contraseña por defecto: <span className="font-mono">123456</span></p>
+                                    <p>Los usuarios deberán cambiar su contraseña al iniciar sesión por primera vez. Una vez cambiada, este mensaje no volverá a mostrarse.</p>
+                                </div>
                             </div>
 
                             <Textarea

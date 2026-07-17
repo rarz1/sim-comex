@@ -152,6 +152,7 @@ export default function MigratePage() {
   const [status, setStatus] = useState<'idle' | 'reading' | 'ready' | 'migrating' | 'done'>('idle');
   const [log, setLog] = useState<string[]>([]);
 
+
   const readIndexedDB = async () => {
     setStatus('reading');
     setTables([]);
