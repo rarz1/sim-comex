@@ -68,7 +68,7 @@ export async function POST(
     const data = await fetchFromSupabase(table, {
       method: 'POST',
       body: JSON.stringify(body),
-      headers: { Prefer: 'return=representation' },
+      headers: { Prefer: 'resolution=merge-duplicates, return=representation' },
     });
     return NextResponse.json({ data: Array.isArray(data) ? data[0] : data });
   } catch (err: any) {

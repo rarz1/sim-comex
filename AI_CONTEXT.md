@@ -782,6 +782,33 @@ SIM 1/
 - Errores: Schema cache de PostgREST no se refrescaba ni con `NOTIFY pgrst, 'reload schema'` ni reiniciando proyecto. Solución: bypass del cliente supabase-js.
 - Pendientes: N/A.
 
+### Sesión 45 - Julio 2026
+- **Fix cambios no reflejados en Vercel**: Los cambios de Sesiones 41-44 (landing editable, icon picker, design settings, etc.) estaban solo en working directory local, sin commit ni push. Vercel servía código de `aff5645`.
+  - Commit: `feat: landing page fully editable (texts, colors, icons, backgrounds)` — 43 archivos, +2546/-713 líneas.
+  - Push exitoso a `origin/main`.
+- Errores: Ninguno. Vercel auto-deploy en progreso.
+- Pendientes: Verificar que los cambios se reflejen en la app de Vercel tras el deploy.
+
+### Sesión 46 - Julio 2026
+- **Fix `duplicate key value violates unique constraint "groups_pkey"` al crear/editar grupos**:
+  - Causa raíz: POST handler en API route hacía INSERT puro.
+  - Fix: `resolution=merge-duplicates` en header `Prefer` → upsert.
+  - Archivo: `app/api/data/[table]/route.ts:71`
+- **Fix `No autorizado` al crear estudiantes**:
+  - Causa raíz: `/api/admin/users` usaba `createRouteHandlerClient` que leía cookie de sesión (no confiable, mismo problema Sesión 22).
+  - Fix: Cliente envía `callerUserId` desde `cached_user_profile` en localStorage. Server verifica rol via admin client (service role key). Sin cookies.
+  - Archivos: `app/api/admin/users/route.ts`, `GroupManager.tsx`, `UserManager.tsx`
+- **Fix schema cache al crear perfiles**:
+  - Causa raíz: `supabase.from('profiles').upsert()` con `@supabase/supabase-js` fallaba por schema cache de PostgREST (columna `can_create_users`).
+  - Fix: Creada `rawUpsert()` con fetch directo a REST API + `Prefer: resolution=merge-duplicates`. Eliminada `can_create_users` del payload (columna no existente en Supabase real).
+  - Archivo: `app/api/admin/users/route.ts`
+- **Fix perfil faltante/login sin rol**:
+  - Causa raíz: Usuarios creados via Supabase Auth Dashboard no tenían perfil en `profiles` ni `user_metadata.role`. Login infería rol por email pero server no.
+  - Fix: Server ahora resuelve rol: `profiles` → `user_metadata` → inferencia por email. Si no hay perfil, lo crea automáticamente.
+  - Archivo: `app/api/admin/users/route.ts`
+- Build: `tsc --noEmit` pasa en todos los fixes.
+- Pendientes: Pushear a GitHub para Vercel.
+
 ## Notas importantes para nuevas IAs
 
 1. **SIEMPRE** leer este archivo al inicio de cada sesión

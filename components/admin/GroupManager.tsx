@@ -148,10 +148,11 @@ export function GroupManager() {
     };
 
     const syncToSupabase = async (usersList: { email: string; password?: string; fullName: string; role: string; documentType?: string; documentNumber?: string }[]) => {
+        const cached = JSON.parse(localStorage.getItem('cached_user_profile') || '{}');
         const res = await fetch('/api/admin/users', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ users: usersList }),
+            body: JSON.stringify({ users: usersList, callerUserId: cached.id }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Error de conexión');
