@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { DocumentTemplate, FormField } from "@/types/form";
 import { Button } from "@/components/ui/button";
-import { Save, Printer } from "lucide-react";
+import { Save, Printer, Loader2 } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { Canvas } from "./Canvas";
-import { dataService } from "@/lib/services/dataService";
+import { useCreateOrUpdateTemplate } from "@/hooks/useData";
+
+const IMAGES_BUCKET = 'template-bg';
 
 interface FormDesignerProps {
     initialTemplate?: DocumentTemplate;
@@ -14,6 +16,7 @@ interface FormDesignerProps {
 }
 
 export function FormDesigner({ initialTemplate, onClose }: FormDesignerProps) {
+    const saveMutation = useCreateOrUpdateTemplate();
     const [template, setTemplate] = useState<DocumentTemplate>(initialTemplate || {
         id: "new",
         moduleId: "",
@@ -28,7 +31,7 @@ export function FormDesigner({ initialTemplate, onClose }: FormDesignerProps) {
 
     const [pdfImage, setPdfImage] = useState<string | null>(initialTemplate?.pdfUrl || null);
     const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
-    const [activeSectionId, setActiveSectionId] = useState<string | null>(null); // For future expansion if we want to track section focus
+    const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
 
     const handleSaveTemplate = async () => {
         try {
@@ -37,11 +40,37 @@ export function FormDesigner({ initialTemplate, onClose }: FormDesignerProps) {
                 templateToSave.id = crypto.randomUUID();
             }
             templateToSave.updatedAt = new Date().toISOString();
-            templateToSave.pdfUrl = pdfImage || ''; // Save base64/url to template (CAUTION: Large Base64 strings in IndexedDB can be heavy)
 
-            await dataService.save('templates', templateToSave);
+            // If pdfImage is a base64 data URL, upload to Storage first
+            if (pdfImage) {
+                if (pdfImage.startsWith('data:')) {
+                    try {
+                        const blob = await fetch(pdfImage).then(r => r.blob());
+                        const ext = blob.type.split('/')[1] || 'png';
+                        const file = new File([blob], `bg.${ext}`, { type: blob.type });
+                        const fd = new FormData();
+                        fd.append('file', file);
+                        fd.append('path', `template-bg/${templateToSave.id}/background.${ext}`);
+                        const uploadRes = await fetch('/api/storage/upload', { method: 'POST', body: fd });
+                        const uploadJson = await uploadRes.json();
+                        if (!uploadJson.error) {
+                            templateToSave.pdfUrl = uploadJson.url;
+                        } else {
+                            templateToSave.pdfUrl = '';
+                        }
+                    } catch {
+                        templateToSave.pdfUrl = '';
+                    }
+                } else {
+                    templateToSave.pdfUrl = pdfImage;
+                }
+            } else {
+                templateToSave.pdfUrl = '';
+            }
 
-            setTemplate(templateToSave);
+            await saveMutation.mutateAsync(templateToSave);
+
+            setTemplate({ ...templateToSave, pdfUrl: templateToSave.pdfUrl });
             alert("Plantilla guardada correctamente.");
 
         } catch (error: any) {
@@ -186,14 +215,38 @@ export function FormDesigner({ initialTemplate, onClose }: FormDesignerProps) {
         }));
     };
 
-    const handleBackgroundChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleBackgroundChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-            setPdfImage(ev.target?.result as string);
-        };
-        reader.readAsDataURL(file);
+        if (!file.type.startsWith('image/')) {
+            alert('Solo se permiten imágenes.');
+            return;
+        }
+        if (file.size > 10 * 1024 * 1024) {
+            alert('La imagen es muy grande (máx 10MB). Usa una imagen más pequeña o comprímela.');
+            return;
+        }
+
+        const tId = template.id === 'new' ? crypto.randomUUID() : template.id;
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('path', `template-bg/${tId}/${file.name}`);
+
+        try {
+            const res = await fetch('/api/storage/upload', {
+                method: 'POST',
+                body: formData,
+            });
+            const json = await res.json();
+            if (json.error) throw new Error(json.error);
+            setPdfImage(json.url);
+            if (template.id === 'new') {
+                setTemplate(prev => ({ ...prev, id: tId }));
+            }
+        } catch (err: any) {
+            console.error('Error uploading image:', err);
+            alert('Error al subir la imagen a la nube. Intenta de nuevo.');
+        }
     };
 
     return (
@@ -217,8 +270,9 @@ export function FormDesigner({ initialTemplate, onClose }: FormDesignerProps) {
                     <Button variant="outline" size="sm" onClick={handlePrint} title="Imprimir Fondo">
                         <Printer className="w-4 h-4 mr-2" /> Imprimir
                     </Button>
-                    <Button size="sm" onClick={handleSaveTemplate}>
-                        <Save className="w-4 h-4 mr-2" /> Guardar
+                    <Button size="sm" onClick={handleSaveTemplate} disabled={saveMutation.isPending}>
+                        {saveMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                        {saveMutation.isPending ? 'Guardando...' : 'Guardar'}
                     </Button>
                     {onClose && (
                         <Button variant="secondary" size="sm" onClick={onClose} className="ml-2">

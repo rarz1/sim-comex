@@ -25,10 +25,16 @@ async function fetchFromSupabase(path: string, options?: RequestInit) {
   }
   const ct = res.headers.get('content-type') || '';
   if (ct.includes('application/json')) {
-    const json = await res.json();
-    return Array.isArray(json) ? json : (json as any).value ?? json;
+    try {
+      const json = await res.json();
+      return Array.isArray(json) ? json : (json as any).value ?? json;
+    } catch {
+      const text = await res.text();
+      throw new Error(text || 'Invalid JSON response from Supabase');
+    }
   }
-  return null;
+  const raw = await res.text();
+  throw new Error(raw || `Unexpected response (${res.status})`);
 }
 
 export async function GET(

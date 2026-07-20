@@ -24,18 +24,38 @@ function toSnakeObj(o: any) { return mapKeys(o, toSnakeCase); }
 export class DataService {
   private baseUrl = '/api/data';
 
+  private async handleResponse(res: Response): Promise<any> {
+    if (!res.ok) {
+      const text = await res.text();
+      let msg = text;
+      try { const j = JSON.parse(text); msg = j.error || j.message || text; } catch {}
+      throw new Error(msg || `HTTP ${res.status}`);
+    }
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
+      let json: any;
+      try {
+        json = await res.json();
+      } catch (parseErr: any) {
+        throw new Error(`Respuesta inválida del servidor (HTTP ${res.status}): ${parseErr.message}`);
+      }
+      if (json.error) throw new Error(json.error);
+      return json;
+    }
+    const raw = await res.text();
+    throw new Error(`Respuesta inesperada del servidor (HTTP ${res.status}): ${raw.slice(0, 200)}`);
+  }
+
   async getAll<T>(table: string, filters?: Record<string, string>): Promise<T[]> {
     const params = filters ? '?' + new URLSearchParams(filters).toString() : '';
     const res = await fetch(`${this.baseUrl}/${table}${params}`);
-    const json = await res.json();
-    if (json.error) throw new Error(json.error);
+    const json = await this.handleResponse(res);
     return (json.data ?? []).map(toCamelObj);
   }
 
   async getById<T>(table: string, id: string): Promise<T | null> {
     const res = await fetch(`${this.baseUrl}/${table}?id=${id}`);
-    const json = await res.json();
-    if (json.error) throw new Error(json.error);
+    const json = await this.handleResponse(res);
     return json.data ? toCamelObj(json.data) : null;
   }
 
@@ -45,8 +65,7 @@ export class DataService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(toSnakeObj(data)),
     });
-    const json = await res.json();
-    if (json.error) throw new Error(json.error);
+    const json = await this.handleResponse(res);
     return json.data ? toCamelObj(json.data) : (null as T);
   }
 
@@ -56,8 +75,7 @@ export class DataService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id }),
     });
-    const json = await res.json();
-    if (json.error) throw new Error(json.error);
+    await this.handleResponse(res);
     return true;
   }
 }

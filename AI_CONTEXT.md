@@ -913,6 +913,20 @@ SIM 1/
   - Archivos: `admin/reports/page.tsx`, `teacher/reports/page.tsx`
 - Build: `tsc --noEmit` + `next build` pasan sin errores.
 
+### Sesión 54 - Julio 2026
+- **Fix "Unexpected token 'R', 'Request En'... is not valid JSON" al guardar plantillas**:
+  - **Causa raíz**: `FormDesigner` guardaba imágenes de fondo como base64 data URL en `pdfUrl`. El payload JSON excedía el límite de tamaño del servidor (Next.js), que devolvía `413 Request Entity Too Large` en texto plano. `dataService.save()` llamaba `res.json()` sin verificar `res.ok` → el parseo del texto plano como JSON fallaba con "Unexpected token 'R'".
+  - **Fix `dataService.ts`**: Creado `handleResponse()` que verifica `res.ok` antes de parsear JSON. Si no es OK, lee `res.text()` y lo usa como mensaje de error. Aplica a `getAll`, `getById`, `save`, `delete`.
+  - **Fix `FormDesigner.tsx`**: Imágenes de fondo ahora se suben a Supabase Storage (bucket `cases-pdf`, path `template-bg/{id}/{file.name}`) en vez de guardarse como base64 en la plantilla. El payload se mantiene pequeño (solo la URL). Si el upload falla, fallback a base64 temporal.
+  - **Fix `FormDesigner.tsx`**: Reemplazado `dataService.save()` directo por `useCreateOrUpdateTemplate()` mutation. Esto invalida el cache de React Query automáticamente después de guardar, asegurando que la lista de plantillas se refleje sin recargar.
+  - Botón Guardar muestra spinner (`Loader2`) + "Guardando..." mientras la mutation está en progreso.
+- **Fix datos no persistían al salir de la app**:
+  - **Causa raíz**: El save fallaba por el payload grande → los datos nunca llegaban a Supabase → al recargar, no había datos.
+  - **Fix**: Subir imágenes a Storage resuelve el tamaño del payload. La mutation invalida React Query cache para que los datos frescos se muestren sin recargar.
+- Archivos: `lib/services/dataService.ts`, `components/form-builder/FormDesigner.tsx`
+- Build: `tsc --noEmit` pasa sin errores.
+- Pendientes: N/A.
+
 ## Notas importantes para nuevas IAs
 
 1. **SIEMPRE** leer este archivo al inicio de cada sesión
