@@ -6,6 +6,7 @@ export interface UserProfile {
     email: string;
     role: UserRole;
     fullName: string;
+    name?: string; // alias for fullName from DB
     groupIds?: string[]; // IDs of groups the user belongs to
     avatarUrl?: string;
     createdAt: string;

@@ -4,12 +4,13 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useGroups, useModules, useUsers } from "@/hooks/useData";
 import { validationService } from "@/lib/services/validationService";
+import { dataService } from "@/lib/services/dataService";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AlertCircle, BarChart, BookOpen, Calendar, Users, X, Printer, CheckCircle, XCircle, Settings, LogOut, Download } from "lucide-react";
+import { AlertCircle, BarChart, BookOpen, Calendar, Users, X, Printer, CheckCircle, XCircle, Settings, LogOut, Download, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { useAppText } from "@/hooks/useAppText";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,7 @@ export default function StudentReportsPage() {
     const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
     const [report, setReport] = useState<any | null>(null);
     const [generating, setGenerating] = useState(false);
+    const [evalVisible, setEvalVisible] = useState<boolean | null>(null);
     const printRef = useRef<HTMLDivElement>(null);
 
     const { data: allModules } = useModules();
@@ -49,13 +51,27 @@ export default function StudentReportsPage() {
 
     if (groupsLoading && !allGroupsData.length) return <div className="p-8">{t('common.loading', 'Cargando...')}</div>;
 
-    // Generate Report when Group is selected
+    // Check evaluation visibility + Generate Report when Group is selected
     useEffect(() => {
         let isCancelled = false;
-        const generateReport = async () => {
+        const checkAndGenerate = async () => {
             if (!user || !selectedGroupId) {
                 setReport(null);
+                setEvalVisible(null);
                 return;
+            }
+
+            // Check if teacher allows students to see evaluations
+            try {
+                const settings = await dataService.getAll<any>('app_texts', { key: `eval_visibility_${selectedGroupId}` });
+                const visible = settings.length === 0 || settings[0].value === 'true';
+                if (!isCancelled) setEvalVisible(visible);
+                if (!visible) {
+                    if (!isCancelled) setReport(null);
+                    return;
+                }
+            } catch {
+                if (!isCancelled) setEvalVisible(true);
             }
 
             setGenerating(true);
@@ -79,7 +95,7 @@ export default function StudentReportsPage() {
             }
         };
 
-        generateReport();
+        checkAndGenerate();
         return () => { isCancelled = true; };
     }, [selectedGroupId, user, myGroups, t]);
 
@@ -201,6 +217,19 @@ export default function StudentReportsPage() {
                             <BarChart className="w-16 h-16 mb-4 opacity-20" />
                             <p className="text-lg font-medium">{t('student.reports.select_group_to_start', 'Selecciona un grupo para comenzar')}</p>
                         </div>
+                    )}
+
+                    {evalVisible === false && (
+                        <Card className="border-amber-200 bg-amber-50">
+                            <CardContent className="p-8 text-center space-y-2">
+                                <EyeOff className="w-12 h-12 mx-auto text-amber-400" />
+                                <h3 className="text-lg font-bold text-amber-800">Evaluaciones deshabilitadas</h3>
+                                <p className="text-amber-700 max-w-md mx-auto">
+                                    El docente ha desactivado la visualización de evaluaciones para este grupo.
+                                    Consulta con tu docente para más información.
+                                </p>
+                            </CardContent>
+                        </Card>
                     )}
 
                     {generating && (

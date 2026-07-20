@@ -25,6 +25,7 @@ export function CatalogManager() {
     const [isCreating, setIsCreating] = useState(false);
     const [newName, setNewName] = useState("");
     const [newType, setNewType] = useState<'simple' | 'two_column' | 'three_column'>('two_column');
+    const [catalogTypeFilter, setCatalogTypeFilter] = useState("all");
     const [localEdits, setLocalEdits] = useState<Record<string, string>>({});
 
     const CATALOG_TYPES = [
@@ -159,12 +160,19 @@ export function CatalogManager() {
         setShowBulkId(null);
     };
 
+    const filteredCatalogs = catalogs?.filter(c => catalogTypeFilter === "all" || c.type === catalogTypeFilter);
+
     return (
         <Card className="h-full border-none shadow-none">
             <CardHeader className="flex flex-row items-center justify-between px-0 pt-0">
                 <div>
                     <CardTitle className="text-2xl font-bold">Catálogos del Sistema</CardTitle>
-                    <p className="text-sm text-muted-foreground">Gestiona las listas desplegables reutilizables.</p>
+                    <p className="text-sm text-muted-foreground">
+                        Gestiona las listas desplegables reutilizables.
+                        <span className="ml-2 inline-flex items-center gap-1 text-xs font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                            {catalogs?.length || 0} catálogos
+                        </span>
+                    </p>
                 </div>
                 <div className="flex items-center gap-2">
                     {!isCreating ? (
@@ -199,8 +207,21 @@ export function CatalogManager() {
                 </div>
             </CardHeader>
             <CardContent className="px-0">
+                <div className="flex items-center gap-2 mb-4">
+                    <Select value={catalogTypeFilter} onValueChange={setCatalogTypeFilter}>
+                        <SelectTrigger className="h-8 w-[180px] text-xs">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Todos los tipos</SelectItem>
+                            {CATALOG_TYPES.map(t => (
+                                <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
                 <Accordion type="single" collapsible className="w-full space-y-2">
-                    {[...(catalogs || [])].sort((a, b) => a.name.localeCompare(b.name)).map(cat => (
+                    {[...(filteredCatalogs || [])].sort((a, b) => a.name.localeCompare(b.name)).map(cat => (
                         <AccordionItem value={cat.id} key={cat.id} className="border rounded-xl px-4 bg-muted/20 group">
                             <div className="flex items-center justify-between gap-4">
                                 {editingId === cat.id ? (
@@ -446,6 +467,12 @@ export function CatalogManager() {
                             <List className="w-10 h-10 text-muted-foreground opacity-20 mb-4" />
                             <p className="text-sm font-medium text-muted-foreground">No hay catálogos creados todavía.</p>
                             <Button variant="link" onClick={() => setIsCreating(true)}>Comenzar creando uno</Button>
+                        </div>
+                    )}
+                    {catalogs && catalogs.length > 0 && filteredCatalogs?.length === 0 && (
+                        <div className="flex flex-col items-center justify-center py-16 border-2 border-dashed rounded-2xl bg-muted/10">
+                            <List className="w-10 h-10 text-muted-foreground opacity-20 mb-4" />
+                            <p className="text-sm font-medium text-muted-foreground">Ningún catálogo coincide con el filtro seleccionado.</p>
                         </div>
                     )}
                 </Accordion>

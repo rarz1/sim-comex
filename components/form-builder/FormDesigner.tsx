@@ -16,7 +16,7 @@ interface FormDesignerProps {
 export function FormDesigner({ initialTemplate, onClose }: FormDesignerProps) {
     const [template, setTemplate] = useState<DocumentTemplate>(initialTemplate || {
         id: "new",
-        moduleId: "mod-1",
+        moduleId: "",
         title: "Nuevo Documento",
         description: "",
         pdfUrl: "",
@@ -44,9 +44,9 @@ export function FormDesigner({ initialTemplate, onClose }: FormDesignerProps) {
             setTemplate(templateToSave);
             alert("Plantilla guardada correctamente.");
 
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error saving template:", error);
-            alert("Error al guardar la plantilla.");
+            alert(`Error al guardar la plantilla: ${error.message || error}`);
         }
     };
 

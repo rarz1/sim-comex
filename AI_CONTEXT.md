@@ -809,6 +809,91 @@ SIM 1/
 - Build: `tsc --noEmit` pasa en todos los fixes.
 - Pendientes: Pushear a GitHub para Vercel.
 
+### Sesión 47 - Julio 2026
+- **Fix React 19 ref error en SelectValue** (`FormRenderer.tsx:177`): `<SelectValue>` tenía children de texto (`{formData[field.id] || undefined}`), lo que React 19 prohíbe en elementos con ref usados como portales. Radix SelectValue ya maneja el valor seleccionado internamente. Eliminados los children.
+- **Fix UUID crash en validación cruzada** (`validationService.ts:25`): `getModuleDataMap()` hacía `dataService.getById('modules', moduleId)` con `moduleId = "mod-1"` (no UUID), causando error de PostgreSQL. Agregado regex UUID validation que retorna `{}` si no es UUID válido. También envuelto en try-catch.
+- **Fix unhandled rejection en handleInputChange** (`FormRenderer.tsx:70`): Agregado try-catch alrededor de `validationService.evaluateField()` para que errores de validación no rompan el form.
+- **Fix cambio de contraseña en admin** (`UserManager.tsx`): El diálogo de edición de usuarios no tenía campo de contraseña. Agregado input opcional (tipo password) en edición. Si se llena, se envía al API (`updateUserById` ya lo soportaba). Save handler ahora envía `formData.password || undefined` cuando edita (antes siempre enviaba `undefined`).
+- **Fix default moduleId "mod-1"** (`FormDesigner.tsx:19`): Cambiado de `"mod-1"` a `""` para evitar seeded data con IDs inválidos.
+- **Fix error message genérico** (`FormDesigner.tsx:49`): Ahora muestra `error.message` real en lugar de "Error al guardar la plantilla." genérico, para facilitar diagnóstico.
+- Build: `tsc --noEmit` pasa sin errores.
+- Pendientes: Monitorear si el error de guardado de plantilla persiste ahora que se ve el mensaje real.
+
+### Sesión 48 - Julio 2026
+- **Feature: Lista de estudiantes en vista teacher/groups/[id]**: Nombre real (`student.name || student.fullName`) en vez de "Usuario". Email inline al lado.
+  - Fix TS: `UserProfile` type agregó `name?: string` (el campo real de DB).
+  - Archivo: `app/(dashboard)/dashboard/teacher/groups/[id]/page.tsx`, `types/roles.ts`
+- **Feature: Toggle visibilidad de evaluaciones por grupo** (teacher/reports):
+  - Nuevo switch "Visible para estudiantes" en la tabla de grupos que guarda `eval_visibility_{groupId}` en `app_texts`.
+  - `loadEvalVisibility()` y `toggleEvalVisibility()` en teacher/reports/page.tsx.
+  - Archivo: `app/(dashboard)/dashboard/teacher/reports/page.tsx`
+- **Feature: Evaluaciones ocultas bloquean reportes estudiante** (student/reports):
+  - `student/reports/page.tsx` verifica `eval_visibility_{groupId}`. Si `false`, muestra "Evaluaciones deshabilitadas" con icono EyeOff.
+- **Feature: Admin copia casos a docente en ExerciseBank**:
+  - Nuevo diálogo con selector de docente + carpeta destino (filtrado por `ownerId + space: 'personal'`).
+  - Botón "Copiar a Docente" en toolbar del detalle (solo visible si `isAdmin`).
+  - Archivo: `components/teacher/ExerciseBank.tsx`
+- Build: `tsc --noEmit` pasa sin errores.
+
+### Sesión 49 - Julio 2026
+- **Admin reports: split view reemplazada por lista full-width + modal**:
+  - Eliminada la cuadrícula grid (ModuleValidationSummary izquierda + ValidationReportCard derecha).
+  - Lista de estudiantes ocupa todo el ancho, sin scroll horizontal.
+  - Al hacer clic en un estudiante se abre modal con el reporte (misma apariencia ValidationReportCard) + botones "Imprimir" y "Volver".
+  - Agregada función `formatDate()`, `getScoreColor()`, `handlePrint()`, `handleGroupReport()`.
+  - Archivo: `app/(dashboard)/dashboard/admin/reports/page.tsx`
+- **Teacher reports: reporte individual ahora con misma apariencia que admin**:
+  - Reemplazado contenido inline del modal (con CSS classNames planos) por la misma estructura visual que ValidationReportCard: iconos CheckCircle/XCircle, Badges verde/rojo, grid 12-columnas, colores por score.
+  - El contenido imprimible (`printRef`) también usa la nueva apariencia.
+  - Archivo: `app/(dashboard)/dashboard/teacher/reports/page.tsx`
+- **Reporte Grupal (admin + teacher)**:
+  - Nuevo botón "Reporte Grupal" en el header de la tabla de estudiantes (ambas vistas).
+  - Abre ventana imprimible con: info del grupo, resumen de promedios/aprobados/en riesgo, tabla con todos los estudiantes, variables, coincidencias, errores y score.
+  - Sin datos cruzados, solo información general.
+  - Archivos: `admin/reports/page.tsx`, `teacher/reports/page.tsx`
+- **Fix null id en app_texts**: `toggleEvalVisibility()` ahora incluye `id` en el payload (existente o `crypto.randomUUID()`). Guarda el ID devuelto para reuso en toggles sucesivos.
+
+### Sesión 50 - Julio 2026
+- **Fix cambio de contraseña en settings**: La página de configuración tenía inputs y botón sin handlers (sin `value`, `onChange`, `onClick`). No existía API route ni función en authService.
+  - Creado `app/api/auth/change-password/route.ts`: usa `createServerClient` de `@supabase/ssr` para leer session cookie y llama `supabase.auth.updateUser({ password })`.
+  - Agregado `authService.changePassword(password)` que hace fetch a la API route.
+  - Settings page conectada: `currentPassword`, `newPassword`, `confirmPassword` con `useState`, validación de coincidencia y mínimo 6 caracteres, toast de éxito/error, estado de carga.
+  - Archivos: `app/api/auth/change-password/route.ts` (nuevo), `lib/services/authService.ts`, `app/(dashboard)/dashboard/settings/page.tsx`
+- Build: `tsc --noEmit` pasa sin errores.
+
+### Sesión 51 - Julio 2026
+- **Admin: Asignación de casos desde repositorio a espacio de docente sin contaminar el repositorio**:
+  - **Problema**: En la vista admin (pestaña Repositorio), cuando el admin asignaba casos a estudiantes, las asignaciones se creaban directamente para los casos del repositorio. Esto contaminaba el repositorio: cuando otro docente entraba a buscar casos, veía estudiantes ya asignados.
+  - **Solución**: El admin ahora selecciona un docente como filtro dentro de la carpeta del repositorio, elige una carpeta destino del espacio personal del docente (o crea automática), selecciona el grupo del docente y los estudiantes. Al hacer clic en "Copiar a Docente y Asignar":
+    1. Casos se copian al espacio personal del docente
+    2. Asignaciones se crean para las COPIAS (no para los originales del repositorio)
+    3. El repositorio permanece limpio sin asignaciones
+  - **Nueva función**: `adminCopyAndAssign()` — copia casos + crea asignaciones
+  - **Nuevo estado**: `selectedTeacherId`, `adminAssignFolderId`
+  - **Filtro anidado** en detail view (admin+repo): Docente → Carpeta destino → Grupo del docente → Estudiantes
+  - **Botón condicional**: "Copiar a Docente y Asignar" (admin+repo) vs "Asignar" (teacher/personal)
+  - **Asignaciones ocultas** en casos del repositorio para admin
+  - **Auto-creación de carpeta**: Si el docente no tiene carpeta personal, se crea automáticamente con el nombre de la carpeta del repositorio (opción "+ Crear carpeta automática")
+  - Archivo: `components/teacher/ExerciseBank.tsx`
+- Build: `tsc --noEmit` + `next build` pasan sin errores.
+
+### Sesión 52 - Julio 2026
+- **ExerciseBank: Lista de casos como tarjetas en grilla**:
+  - Reemplazada la lista vertical (`space-y-2`) por grilla responsiva `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3` en la vista detalle de carpeta.
+  - Cada caso es una card compacta con icono, título (line-clamp-2), descripción, badge PDF/tamaño, acciones (eye/rename/delete) visibles al hover, checkbox para selección, y badges de estudiantes asignados.
+  - Archivo: `components/teacher/ExerciseBank.tsx`
+- **Reportes individuales premium para impresión (admin y teacher)**:
+  - Rediseño completo del template HTML inline de `handlePrint()` en ambas páginas.
+  - Nuevo letterhead con branding SIM-COMEX (navy/gold), info-grid de 4 campos (estudiante, grupo, docente, módulo), score card con color dinámico, tabla profesional con zebra stripes y filas inconsistentes destacadas en rojo, y footer académico.
+  - Archivos: `admin/reports/page.tsx`, `teacher/reports/page.tsx`
+- **Reportes grupales premium con estadísticas avanzadas (admin y teacher)**:
+  - Nuevo template `handleGroupReport()` con 6 tarjetas estadísticas (promedio, mediana, puntaje más alto, puntaje más bajo, desviación estándar, total estudiantes).
+  - Barra de distribución visual (excelente verde ≥90%, alerta ámbar ≥70%, riesgo rojo <70%) con leyenda.
+  - Ranking de estudiantes numerado (#1, #2, etc.) ordenado por consistencia descendente.
+  - Mismo letterhead branding consistente con reportes individuales.
+  - Archivos: `admin/reports/page.tsx`, `teacher/reports/page.tsx`
+- Build: `tsc --noEmit` + `next build` pasan sin errores.
+
 ## Notas importantes para nuevas IAs
 
 1. **SIEMPRE** leer este archivo al inicio de cada sesión

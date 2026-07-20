@@ -40,6 +40,8 @@ export function GroupManager() {
     });
 
     const [memberFilter, setMemberFilter] = useState("");
+    const [moduleFilter, setModuleFilter] = useState("all");
+    const [teacherFilter, setTeacherFilter] = useState("all");
     const [showStudentDialog, setShowStudentDialog] = useState(false);
     const [studentForm, setStudentForm] = useState({ fullName: "", email: "", documentType: "CC", documentNumber: "" });
     const [studentSyncing, setStudentSyncing] = useState(false);
@@ -65,7 +67,12 @@ export function GroupManager() {
         ? dbTeachers
         : (allUsers?.filter(u => u.role === 'teacher') || []);
 
-    // Handlers
+    const filteredGroups = groups?.filter(g => {
+        const matchesModule = moduleFilter === "all" || g.moduleId === moduleFilter;
+        const matchesTeacher = teacherFilter === "all" || g.teacherId === teacherFilter;
+        return matchesModule && matchesTeacher;
+    });
+
     // Handlers
     const handleCreate = () => {
         setFormData({
@@ -519,11 +526,41 @@ export function GroupManager() {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Gestión de Grupos</h1>
-                    <p className="text-muted-foreground">Administra los grupos de estudiantes, docentes y módulos asignados.</p>
+                    <p className="text-muted-foreground">
+                        Administra los grupos de estudiantes, docentes y módulos asignados.
+                        <span className="ml-2 inline-flex items-center gap-1 text-xs font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                            {groups?.length || 0} grupos
+                        </span>
+                    </p>
                 </div>
                 <Button onClick={handleCreate}>
                     <Plus className="w-4 h-4 mr-2" /> Nuevo Grupo
                 </Button>
+            </div>
+
+            <div className="flex items-center gap-3">
+                <Select value={moduleFilter} onValueChange={setModuleFilter}>
+                    <SelectTrigger className="h-9 w-[200px] text-xs">
+                        <SelectValue placeholder="Filtrar por módulo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">Todos los módulos</SelectItem>
+                        {modules?.map(m => (
+                            <SelectItem key={m.id} value={m.id}>{m.title}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                <Select value={teacherFilter} onValueChange={setTeacherFilter}>
+                    <SelectTrigger className="h-9 w-[200px] text-xs">
+                        <SelectValue placeholder="Filtrar por docente" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">Todos los docentes</SelectItem>
+                        {availableTeachers.map(t => (
+                            <SelectItem key={t.id} value={t.id}>{t.name || t.email}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
             </div>
 
             <Card>
@@ -541,7 +578,7 @@ export function GroupManager() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {(!groups || groups.length === 0) && (
+                            {(!filteredGroups || filteredGroups.length === 0) && (
                                 <TableRow>
                                     <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                                         No se encontraron grupos. Crea el primero.
@@ -549,7 +586,7 @@ export function GroupManager() {
                                 </TableRow>
                             )}
 
-                            {groups?.map(group => {
+                            {filteredGroups?.map(group => {
                                 const module = modules?.find(m => m.id === group.moduleId);
                                 const moduleName = module?.title || "Sin Asignar";
 

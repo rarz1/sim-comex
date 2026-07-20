@@ -270,6 +270,23 @@ export const authService = {
         return { user: userProfile };
     },
 
+    async changePassword(password: string): Promise<{ success: boolean; error?: string }> {
+        try {
+            const res = await fetch('/api/auth/change-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password }),
+            })
+            const json = await res.json()
+            if (!res.ok || json.error) {
+                return { success: false, error: json.error || `Error HTTP ${res.status}` }
+            }
+            return { success: true }
+        } catch (err: any) {
+            return { success: false, error: err.message || 'Error de conexión' }
+        }
+    },
+
     async logout() {
         if (this.isMockEnabled()) {
             localStorage.removeItem(MOCK_SESSION_KEY);

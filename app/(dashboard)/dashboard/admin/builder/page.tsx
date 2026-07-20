@@ -7,18 +7,29 @@ import { useTemplates, useTemplate, useDeleteTemplate } from "@/hooks/useData";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, PenTool, LayoutTemplate, Trash2, Calendar, FileText } from "lucide-react";
+import { Plus, PenTool, LayoutTemplate, Trash2, Calendar, FileText, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatDate } from "date-fns";
 import { es } from "date-fns/locale";
 
 export default function BuilderPage() {
     const [isEditing, setIsEditing] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
+    const [templateSearch, setTemplateSearch] = useState("");
+    const [templateStatusFilter, setTemplateStatusFilter] = useState<"all" | "published" | "draft">("all");
 
     const { data: templates } = useTemplates();
     const { data: fullTemplate } = useTemplate(editingId || undefined);
     const deleteTemplate = useDeleteTemplate();
+
+    const filteredTemplates = templates?.filter(t => {
+        const q = templateSearch.toLowerCase();
+        const matchesSearch = t.title.toLowerCase().includes(q) || (t.description || "").toLowerCase().includes(q);
+        const matchesStatus = templateStatusFilter === "all" || t.status === templateStatusFilter;
+        return matchesSearch && matchesStatus;
+    });
 
     const handleCreateNew = () => {
         setEditingId(null);
@@ -63,14 +74,49 @@ export default function BuilderPage() {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Constructor de Documentos</h1>
-                    <p className="text-muted-foreground">Administra y diseña las plantillas de formularios.</p>
+                    <p className="text-muted-foreground">
+                        Administra y diseña las plantillas de formularios.
+                        <span className="ml-2 inline-flex items-center gap-1 text-xs font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                            {templates?.length || 0} plantillas
+                        </span>
+                    </p>
                 </div>
                 <Button onClick={handleCreateNew}>
                     <Plus className="w-4 h-4 mr-2" /> Crear Nuevo
                 </Button>
             </div>
 
+            <div className="flex items-center gap-3">
+                <div className="relative flex-1 max-w-xs">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                        placeholder="Buscar plantilla..."
+                        className="pl-8 h-9 text-xs"
+                        value={templateSearch}
+                        onChange={e => setTemplateSearch(e.target.value)}
+                    />
+                </div>
+                <Select value={templateStatusFilter} onValueChange={(v: any) => setTemplateStatusFilter(v)}>
+                    <SelectTrigger className="h-9 w-[140px] text-xs">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        <SelectItem value="published">Final</SelectItem>
+                        <SelectItem value="draft">Borrador</SelectItem>
+                    </SelectContent>
+                </Select>
+            </div>
+
             {/* Empty State */}
+            {templates && templates.length > 0 && filteredTemplates?.length === 0 && (
+                <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-lg text-muted-foreground bg-muted/10">
+                    <Search className="w-12 h-12 mb-4 opacity-50" />
+                    <h3 className="text-lg font-medium">Sin resultados</h3>
+                    <p className="mb-4 text-sm">No hay plantillas que coincidan con los filtros.</p>
+                </div>
+            )}
+
             {templates?.length === 0 && (
                 <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-lg text-muted-foreground bg-muted/10">
                     <FileText className="w-12 h-12 mb-4 opacity-50" />
@@ -95,7 +141,7 @@ export default function BuilderPage() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {templates?.map(template => (
+                                {filteredTemplates?.map(template => (
                                     <TableRow key={template.id} className="group cursor-pointer hover:bg-muted/50" onClick={() => handleEdit(template)}>
                                         <TableCell className="font-medium">
                                             <div>{template.title}</div>

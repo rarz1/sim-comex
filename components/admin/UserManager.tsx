@@ -24,6 +24,7 @@ export function UserManager() {
 
     const [searchTerm, setSearchTerm] = useState("");
     const [roleFilter, setRoleFilter] = useState<UserRole | "all">("all");
+    const [moduleUserFilter, setModuleUserFilter] = useState("all");
 
     const [isEditing, setIsEditing] = useState(false);
     const [syncing, setSyncing] = useState(false);
@@ -56,6 +57,7 @@ export function UserManager() {
 
     const filteredUsers = users?.filter(u => {
         const userGroups = groups?.filter((g: any) => (g.members || []).includes(u.id)) || [];
+        const userModuleIds = [...new Set(userGroups.map((g: any) => g.moduleId).filter(Boolean))];
         const groupModuleStr = userGroups.map((g: any) => {
             const modName = moduleMap[g.moduleId] || '';
             return `${g.name} ${modName}`;
@@ -66,7 +68,8 @@ export function UserManager() {
             (u.id || '').toLowerCase().includes(q) ||
             groupModuleStr.includes(q);
         const matchesRole = roleFilter === "all" || u.role === roleFilter;
-        return matchesSearch && matchesRole;
+        const matchesModule = moduleUserFilter === "all" || userModuleIds.includes(moduleUserFilter);
+        return matchesSearch && matchesRole && matchesModule;
     });
 
     const generateDeterministicId = (email: string, role: string) => {
@@ -109,7 +112,7 @@ export function UserManager() {
             const results = await syncToSupabase([{
                 id: formData.id,
                 email,
-                password: formData.id ? undefined : defaultPassword,
+                password: formData.id ? (formData.password || undefined) : defaultPassword,
                 fullName: formData.fullName,
                 role,
                 documentType: formData.documentType,
@@ -152,6 +155,7 @@ export function UserManager() {
             documentNumber: user.documentNumber || '',
             createdAt: user.createdAt,
             canCreateUsers: user.canCreateUsers || false,
+            password: '',
         });
         setIsEditing(true);
     };
@@ -266,7 +270,15 @@ export function UserManager() {
             <div className="flex justify-between items-center">
                 <div>
                     <h2 className="text-3xl font-bold tracking-tight">Gestión de Usuarios</h2>
-                    <p className="text-muted-foreground">Administre docentes y estudiantes, o realice cargas masivas.</p>
+                    <p className="text-muted-foreground">
+                        Administre docentes y estudiantes, o realice cargas masivas.
+                        <span className="ml-2 inline-flex items-center gap-1 text-xs font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                            {users?.length || 0} usuarios
+                        </span>
+                        <span className="ml-1 text-xs text-muted-foreground">
+                            ({users?.filter(u => u.role === 'student').length || 0} est. · {users?.filter(u => u.role === 'teacher').length || 0} doc. · {users?.filter(u => u.role === 'admin').length || 0} adm.)
+                        </span>
+                    </p>
                 </div>
             </div>
 
@@ -279,18 +291,18 @@ export function UserManager() {
                 <TabsContent value="list" className="space-y-4">
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                                 <div className="relative">
                                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                                     <Input
                                         placeholder="Buscar por nombre, email o ID..."
-                                        className="pl-8 w-[300px]"
+                                        className="pl-8 w-[220px]"
                                         value={searchTerm}
                                         onChange={e => setSearchTerm(e.target.value)}
                                     />
                                 </div>
                                 <Select value={roleFilter} onValueChange={(v) => setRoleFilter(v as any)}>
-                                    <SelectTrigger className="w-[180px]">
+                                    <SelectTrigger className="w-[150px]">
                                         <SelectValue placeholder="Filtrar por Rol" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -298,6 +310,17 @@ export function UserManager() {
                                         <SelectItem value="student">Estudiantes</SelectItem>
                                         <SelectItem value="teacher">Docentes</SelectItem>
                                         <SelectItem value="admin">Administradores</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <Select value={moduleUserFilter} onValueChange={setModuleUserFilter}>
+                                    <SelectTrigger className="w-[180px]">
+                                        <SelectValue placeholder="Módulo" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">Todos los módulos</SelectItem>
+                                        {modules?.map(m => (
+                                            <SelectItem key={m.id} value={m.id}>{m.title}</SelectItem>
+                                        ))}
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -394,17 +417,25 @@ export function UserManager() {
                                         disabled={!!formData.id}
                                     />
                                 </div>
-                                {!formData.id && (
-                                    <div className="grid grid-cols-4 items-center gap-4">
-                                        <Label className="text-right">Contraseña</Label>
+                                <div className="grid grid-cols-4 items-center gap-4">
+                                    <Label className="text-right">Contraseña</Label>
+                                    {formData.id ? (
+                                        <Input
+                                            className="col-span-3"
+                                            type="password"
+                                            placeholder="Dejar vacío para no cambiar"
+                                            value={formData.password || ''}
+                                            onChange={e => setFormData({ ...formData, password: e.target.value })}
+                                        />
+                                    ) : (
                                         <Input
                                             className="col-span-3"
                                             type="text"
                                             value="123456"
                                             disabled
                                         />
-                                    </div>
-                                )}
+                                    )}
+                                </div>
                                 <div className="grid grid-cols-4 items-center gap-4">
                                     <Label className="text-right">Rol</Label>
                                     <Select

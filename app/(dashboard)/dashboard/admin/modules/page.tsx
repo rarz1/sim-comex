@@ -7,18 +7,31 @@ import { ModuleEditor } from "@/components/admin/ModuleEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, BookOpen, Trash2, FileText, Copy } from "lucide-react";
+import { Plus, BookOpen, Trash2, FileText, Copy, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 
 export default function ModulesPage() {
     const [isEditing, setIsEditing] = useState(false);
     const [selectedModuleId, setSelectedModuleId] = useState<string | undefined>(undefined);
+    const [moduleSearch, setModuleSearch] = useState("");
+    const [statusFilter, setStatusFilter] = useState<"all" | "published" | "draft">("all");
+    const [teacherFilter, setTeacherFilter] = useState("all");
 
     const { data: modules } = useModules();
     const { data: allUsers } = useUsers();
     const createOrUpdateModule = useCreateOrUpdateModule();
     const deleteModule = useDeleteModule();
+
+    const filteredModules = modules?.filter(m => {
+        const q = moduleSearch.toLowerCase();
+        const matchesSearch = m.title.toLowerCase().includes(q) || (m.description || "").toLowerCase().includes(q);
+        const matchesStatus = statusFilter === "all" || m.status === statusFilter;
+        const matchesTeacher = teacherFilter === "all" || m.teacherId === teacherFilter;
+        return matchesSearch && matchesStatus && matchesTeacher;
+    });
 
     const handleCreate = () => {
         setSelectedModuleId(undefined);
@@ -78,11 +91,49 @@ export default function ModulesPage() {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight">Gestión de Módulos</h1>
-                    <p className="text-muted-foreground">Administra los módulos educativos, sus contenidos y asignaciones.</p>
+                    <p className="text-muted-foreground">
+                        Administra los módulos educativos, sus contenidos y asignaciones.
+                        <span className="ml-2 inline-flex items-center gap-1 text-xs font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                            {modules?.length || 0} módulos
+                        </span>
+                    </p>
                 </div>
                 <Button onClick={handleCreate}>
                     <Plus className="w-4 h-4 mr-2" /> Nuevo Módulo
                 </Button>
+            </div>
+
+            <div className="flex items-center gap-3">
+                <div className="relative flex-1 max-w-xs">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                        placeholder="Buscar módulo..."
+                        className="pl-8 h-9 text-xs"
+                        value={moduleSearch}
+                        onChange={e => setModuleSearch(e.target.value)}
+                    />
+                </div>
+                <Select value={statusFilter} onValueChange={(v: any) => setStatusFilter(v)}>
+                    <SelectTrigger className="h-9 w-[140px] text-xs">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        <SelectItem value="published">Publicados</SelectItem>
+                        <SelectItem value="draft">Borradores</SelectItem>
+                    </SelectContent>
+                </Select>
+                <Select value={teacherFilter} onValueChange={setTeacherFilter}>
+                    <SelectTrigger className="h-9 w-[180px] text-xs">
+                        <SelectValue placeholder="Docente" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">Todos los docentes</SelectItem>
+                        {allUsers?.filter(u => u.role === 'teacher').map(t => (
+                            <SelectItem key={t.id} value={t.id}>{t.name || t.email}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
             </div>
 
             <Card>
@@ -97,7 +148,7 @@ export default function ModulesPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {(!modules || modules.length === 0) && (
+                            {(!filteredModules || filteredModules.length === 0) && (
                                 <TableRow>
                                     <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
                                         <div className="flex flex-col items-center gap-2">
@@ -108,7 +159,7 @@ export default function ModulesPage() {
                                 </TableRow>
                             )}
 
-                            {modules?.map(module => (
+                            {filteredModules?.map(module => (
                                 <TableRow key={module.id} className="group cursor-pointer hover:bg-muted/50" onClick={() => handleEdit(module.id)}>
                                     <TableCell className="font-medium">
                                         <div className="text-sm font-bold text-gray-900 dark:text-gray-100 group-hover:text-primary transition-colors">{module.title}</div>

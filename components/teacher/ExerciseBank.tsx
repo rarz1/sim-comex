@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FolderPlus, FileText, Users, Folder, Trash2, ArrowLeft, Upload, Eye, ChevronRight, Pencil, Copy, X, Loader2, Download } from "lucide-react";
 import type { CaseFolder, CaseItem, CaseAssignment } from "@/types/exercises";
 import { storageService } from "@/lib/services/storageService";
@@ -67,6 +68,11 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
     const [copyFolderTarget, setCopyFolderTarget] = useState<CaseFolder | null>(null);
     const [isCopyFolderOpen, setIsCopyFolderOpen] = useState(false);
     const [copyFolderDestId, setCopyFolderDestId] = useState("");
+    const [isAdminCopyOpen, setIsAdminCopyOpen] = useState(false);
+    const [adminCopyTeacherId, setAdminCopyTeacherId] = useState("");
+    const [adminCopyFolderId, setAdminCopyFolderId] = useState("");
+    const [selectedTeacherId, setSelectedTeacherId] = useState<string>("");
+    const [adminAssignFolderId, setAdminAssignFolderId] = useState<string>("");
 
     const isTeacher = user?.role === 'teacher';
 
@@ -104,6 +110,13 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
     const groupStudents = allUsers?.filter(u =>
         selectedGroup?.members?.includes(u.id || u.email)
     ) || [];
+
+    const teachers = (allUsers || []).filter((u: any) => u.role === 'teacher');
+    const selectedTeacherGroups = (allGroups || []).filter(g => g.teacherId === selectedTeacherId);
+    const teacherPersonalFolders = (allFolders || []).filter(f => {
+        const m = extractMeta(f.description);
+        return m.ownerId === selectedTeacherId && m.space === 'personal';
+    });
 
     const personalFolders = (allFolders || []).filter(f => {
         const m = extractMeta(f.description);
@@ -305,6 +318,24 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
         }
     };
 
+    const adminCopyToTeacher = async () => {
+        if (!isAdmin || selectedCaseIds.length === 0 || !adminCopyTeacherId || !adminCopyFolderId || !user) return;
+        const casesToCopy = (allCases || []).filter(c => selectedCaseIds.includes(c.id));
+        for (const c of casesToCopy) {
+            createOrUpdateExercise.mutate({
+                id: crypto.randomUUID(),
+                folderId: adminCopyFolderId,
+                title: c.title,
+                description: c.description,
+                content: addCaseMeta({ ...(c.content || {}) }, adminCopyTeacherId, 'personal'),
+            });
+        }
+        setIsAdminCopyOpen(false);
+        setSelectedCaseIds([]);
+        setAdminCopyTeacherId("");
+        setAdminCopyFolderId("");
+    };
+
     const folderName = (folderId: string) => {
         const f = (allFolders || []).find(f => f.id === folderId);
         return f ? extractMeta(f.description).desc || f.name : '—';
@@ -385,6 +416,46 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
         }
         setSelectedCaseIds([]);
         setSelectedStudentIds([]);
+    };
+
+    const adminCopyAndAssign = async () => {
+        if (!selectedFolder || !user || !selectedTeacherId || !adminAssignFolderId || selectedCaseIds.length === 0 || selectedStudentIds.length === 0) return;
+        let destFolderId = adminAssignFolderId;
+        if (adminAssignFolderId === '__create__' || !teacherPersonalFolders.find(f => f.id === adminAssignFolderId)) {
+            const newFolderId = crypto.randomUUID();
+            const cleanDesc = extractMeta(selectedFolder.description).desc || selectedFolder.description;
+            await createOrUpdateFolder.mutateAsync({
+                id: newFolderId,
+                name: selectedFolder.name,
+                description: embedMeta(cleanDesc, selectedTeacherId, 'personal'),
+            });
+            destFolderId = newFolderId;
+        }
+        const casesToCopy = (allCases || []).filter(c => selectedCaseIds.includes(c.id));
+        const newCaseIds: string[] = [];
+        for (const c of casesToCopy) {
+            const newId = crypto.randomUUID();
+            createOrUpdateExercise.mutate({
+                id: newId,
+                folderId: destFolderId,
+                title: c.title,
+                description: c.description,
+                content: addCaseMeta({ ...(c.content || {}) }, selectedTeacherId, 'personal'),
+            });
+            newCaseIds.push(newId);
+        }
+        for (const caseId of newCaseIds) {
+            for (const studentId of selectedStudentIds) {
+                createOrUpdateExerciseAssignment.mutate({
+                    id: crypto.randomUUID(), caseId, studentId,
+                    groupId: selectedGroupId, assignedBy: user.id,
+                    assignedAt: new Date().toISOString(), status: 'pending',
+                });
+            }
+        }
+        setSelectedCaseIds([]);
+        setSelectedStudentIds([]);
+        alert(`✓ ${casesToCopy.length} caso(s) copiados al espacio del docente y asignados a ${selectedStudentIds.length} estudiante(s).`);
     };
 
     const viewPdf = (caseItem: CaseItem) => {
@@ -493,42 +564,119 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {!isReadOnly && (
                         <div className="md:col-span-1 space-y-4">
-                            <Label>Seleccionar Grupo</Label>
-                            <Select value={selectedGroupId} onValueChange={setSelectedGroupId}>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Elige un grupo..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {(isAdmin ? allGroups : teacherGroups)?.map(g => (
-                                        <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            {isAdmin && currentTab === 'repository' && (
+                                <>
+                                    <Label>Docente</Label>
+                                    <Select value={selectedTeacherId} onValueChange={(v) => { setSelectedTeacherId(v); setSelectedGroupId(""); setAdminAssignFolderId(""); setSelectedStudentIds([]); setSelectedCaseIds([]); }}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Elige un docente..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {teachers.map((t: any) => (
+                                                <SelectItem key={t.id} value={t.id}>{userName(t)}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
 
-                            {selectedGroupId && (
-                                <Card>
-                                    <CardHeader className="pb-2">
-                                        <CardTitle className="text-sm font-bold uppercase tracking-wider flex items-center gap-2">
-                                            <Users className="h-4 w-4" /> Estudiantes ({selectedGroupUsers.length})
-                                        </CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="space-y-1">
-                                        {selectedGroupUsers.map(u => (
-                                            <div key={u.id} className="flex items-center gap-2 py-1">
-                                                <Checkbox
-                                                    checked={selectedStudentIds.includes(u.id)}
-                                                    onCheckedChange={(c) => {
-                                                        setSelectedStudentIds(c ? [...selectedStudentIds, u.id] : selectedStudentIds.filter(id => id !== u.id));
-                                                    }}
-                                                />
-                                                <span className="text-sm">{userName(u)}</span>
-                                            </div>
-                                        ))}
-                                        {selectedGroupUsers.length === 0 && (
-                                            <p className="text-xs text-muted-foreground italic">Sin estudiantes</p>
-                                        )}
-                                    </CardContent>
-                                </Card>
+                                    {selectedTeacherId && (
+                                        <>
+                                            <Label>Carpeta destino (espacio del docente)</Label>
+                                            <Select value={adminAssignFolderId} onValueChange={setAdminAssignFolderId}>
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Elige o crea una carpeta..." />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {teacherPersonalFolders.map(f => (
+                                                        <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
+                                                    ))}
+                                                    <SelectItem value="__create__">+ Crear carpeta automática</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+
+                                            <Label>Grupo del docente</Label>
+                                            <Select value={selectedGroupId} onValueChange={(v) => { setSelectedGroupId(v); setSelectedStudentIds([]); setSelectedCaseIds([]); }}>
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Elige un grupo..." />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {selectedTeacherGroups.map(g => (
+                                                        <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                                                    ))}
+                                                    {selectedTeacherGroups.length === 0 && (
+                                                        <SelectItem value="_none" disabled>El docente no tiene grupos</SelectItem>
+                                                    )}
+                                                </SelectContent>
+                                            </Select>
+                                        </>
+                                    )}
+
+                                    {selectedGroupId && (
+                                        <Card>
+                                            <CardHeader className="pb-2">
+                                                <CardTitle className="text-sm font-bold uppercase tracking-wider flex items-center gap-2">
+                                                    <Users className="h-4 w-4" /> Estudiantes ({selectedGroupUsers.length})
+                                                </CardTitle>
+                                            </CardHeader>
+                                            <CardContent className="space-y-1">
+                                                {selectedGroupUsers.map(u => (
+                                                    <div key={u.id} className="flex items-center gap-2 py-1">
+                                                        <Checkbox
+                                                            checked={selectedStudentIds.includes(u.id)}
+                                                            onCheckedChange={(c) => {
+                                                                setSelectedStudentIds(c ? [...selectedStudentIds, u.id] : selectedStudentIds.filter(id => id !== u.id));
+                                                            }}
+                                                        />
+                                                        <span className="text-sm">{userName(u)}</span>
+                                                    </div>
+                                                ))}
+                                                {selectedGroupUsers.length === 0 && (
+                                                    <p className="text-xs text-muted-foreground italic">Sin estudiantes</p>
+                                                )}
+                                            </CardContent>
+                                        </Card>
+                                    )}
+                                </>
+                            )}
+                            {(!isAdmin || currentTab !== 'repository') && (
+                                <>
+                                    <Label>Seleccionar Grupo</Label>
+                                    <Select value={selectedGroupId} onValueChange={setSelectedGroupId}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Elige un grupo..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {(isAdmin ? allGroups : teacherGroups)?.map(g => (
+                                                <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+
+                                    {selectedGroupId && (
+                                        <Card>
+                                            <CardHeader className="pb-2">
+                                                <CardTitle className="text-sm font-bold uppercase tracking-wider flex items-center gap-2">
+                                                    <Users className="h-4 w-4" /> Estudiantes ({selectedGroupUsers.length})
+                                                </CardTitle>
+                                            </CardHeader>
+                                            <CardContent className="space-y-1">
+                                                {selectedGroupUsers.map(u => (
+                                                    <div key={u.id} className="flex items-center gap-2 py-1">
+                                                        <Checkbox
+                                                            checked={selectedStudentIds.includes(u.id)}
+                                                            onCheckedChange={(c) => {
+                                                                setSelectedStudentIds(c ? [...selectedStudentIds, u.id] : selectedStudentIds.filter(id => id !== u.id));
+                                                            }}
+                                                        />
+                                                        <span className="text-sm">{userName(u)}</span>
+                                                    </div>
+                                                ))}
+                                                {selectedGroupUsers.length === 0 && (
+                                                    <p className="text-xs text-muted-foreground italic">Sin estudiantes</p>
+                                                )}
+                                            </CardContent>
+                                        </Card>
+                                    )}
+                                </>
                             )}
                         </div>
                     )}
@@ -542,112 +690,159 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
                                         <Download className="mr-2 h-4 w-4" /> Copiar {selectedCaseIds.length} a Mi Espacio
                                     </Button>
                                 )}
-                                {canAssign && (
-                                    <Button
-                                        size="sm"
-                                        onClick={assignCases}
-                                        disabled={selectedCaseIds.length === 0 || selectedStudentIds.length === 0}
-                                    >
-                                        <Users className="mr-2 h-4 w-4" /> Asignar a {selectedStudentIds.length} estudiante(s)
+                                {isAdmin && selectedCaseIds.length > 0 && !isReadOnly && (
+                                    <Button size="sm" variant="secondary" onClick={() => { setAdminCopyTeacherId(""); setAdminCopyFolderId(""); setIsAdminCopyOpen(true); }}>
+                                        <Download className="mr-2 h-4 w-4" /> Copiar {selectedCaseIds.length} a Docente
                                     </Button>
+                                )}
+                                {canAssign && (
+                                    isAdmin && currentTab === 'repository' ? (
+                                        <Button
+                                            size="sm"
+                                            onClick={adminCopyAndAssign}
+                                            disabled={selectedCaseIds.length === 0 || selectedStudentIds.length === 0 || !selectedTeacherId || !adminAssignFolderId}
+                                        >
+                                            <Copy className="mr-2 h-4 w-4" /> Copiar a Docente y Asignar
+                                        </Button>
+                                    ) : (
+                                        <Button
+                                            size="sm"
+                                            onClick={assignCases}
+                                            disabled={selectedCaseIds.length === 0 || selectedStudentIds.length === 0}
+                                        >
+                                            <Users className="mr-2 h-4 w-4" /> Asignar a {selectedStudentIds.length} estudiante(s)
+                                        </Button>
+                                    )
                                 )}
                             </div>
                         </div>
 
-                        <div className="space-y-2">
-                            {folderCases.map(c => {
-                                const assigned = getAssignedStudents(c.id);
-                                return (
-                                    <div key={c.id} className="border rounded-lg p-3 space-y-2 hover:bg-muted/30 transition-colors">
-                                        <div className="flex items-start gap-3">
-                                            {(isReadOnly || canAssign) && (
-                                                <Checkbox
-                                                    checked={selectedCaseIds.includes(c.id)}
-                                                    onCheckedChange={(ch) => {
-                                                        setSelectedCaseIds(ch ? [...selectedCaseIds, c.id] : selectedCaseIds.filter(id => id !== c.id));
-                                                    }}
-                                                    className="mt-1"
-                                                />
-                                            )}
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2">
-                                                    <FileText className="h-4 w-4 text-primary shrink-0" />
-                                                    <span className="font-medium truncate">{c.title}</span>
-                                                    {c.content.pdfName && (
-                                                        <Badge variant="outline" className="text-[9px] font-mono">PDF</Badge>
-                                                    )}
-                                                </div>
-                                                {c.description && (
-                                                    <p className="text-xs text-muted-foreground mt-0.5">{c.description}</p>
-                                                )}
-                                                {c.content.pdfSize && (
-                                                    <p className="text-[10px] text-muted-foreground">{c.content.pdfSize}</p>
-                                                )}
-                                                {assigned.length > 0 && (
-                                                    <div className="space-y-1.5 mt-1.5">
-                                                        {Object.entries(
-                                                            assigned.reduce((acc: Record<string, typeof assigned>, s) => {
-                                                                (acc[s.groupId] ??= []).push(s);
-                                                                return acc;
-                                                            }, {})
-                                                        ).map(([gId, students]) => (
-                                                            <div key={gId}>
-                                                                <button
-                                                                    onClick={() => setSelectedGroupId(gId)}
-                                                                    className="text-[10px] font-bold text-primary uppercase tracking-wider hover:underline mb-0.5 flex items-center gap-1"
-                                                                >
-                                                                    <Users className="w-3 h-3" />
-                                                                    {students[0].groupName}
-                                                                </button>
-                                                                <div className="flex flex-wrap gap-1">
-                                                                    {students.map(s => (
-                                                                        <Badge key={s.userId} variant="secondary" className="text-[9px] flex items-center gap-1">
-                                                                            {s.name}
-                                                                            {canAssign && (
-                                                                                <button
-                                                                                    onClick={(e) => { e.stopPropagation(); removeAssignment(c.id, s.userId); }}
-                                                                                    className="hover:text-destructive ml-0.5"
-                                                                                >
-                                                                                    <X className="h-2.5 w-2.5" />
-                                                                                </button>
-                                                                            )}
-                                                                        </Badge>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div className="flex gap-1 shrink-0">
-                                                {c.content.pdfUrl && (
-                                                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => viewPdf(c)}>
-                                                        <Eye className="h-3.5 w-3.5" />
-                                                    </Button>
-                                                )}
-                                                {canRename && (
-                                                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openRenameDialog(c)}>
-                                                        <Pencil className="h-3.5 w-3.5" />
-                                                    </Button>
-                                                )}
-                                                {canDelete && (
-                                                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => deleteCase(c.id)}>
-                                                        <Trash2 className="h-3.5 w-3.5" />
-                                                    </Button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                            {folderCases.length === 0 && (
-                                <p className="text-sm text-muted-foreground italic text-center py-8">
+                        {folderCases.length === 0 ? (
+                            <div className="text-center py-12 text-muted-foreground">
+                                <FileText className="h-10 w-10 mx-auto mb-2 opacity-30" />
+                                <p className="text-sm">
                                     {isReadOnly
                                         ? "No hay casos en esta carpeta del repositorio."
                                         : "No hay casos en esta carpeta. Sube un PDF."}
                                 </p>
-                            )}
-                        </div>
+                            </div>
+                        ) : (
+                            <Card>
+                                <CardContent className="p-0">
+                                    <Table className="table-fixed w-full">
+                                        <TableHeader>
+                                            <TableRow>
+                                                {(isReadOnly || canAssign) && <TableHead className="w-10"></TableHead>}
+                                                <TableHead className="w-[30%]">Caso</TableHead>
+                                                {!(isAdmin && currentTab === 'repository') && (
+                                                    <TableHead className="w-[55%]">Estudiantes Asignados</TableHead>
+                                                )}
+                                                <TableHead className="w-[15%] text-right">Acciones</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {folderCases.map(c => {
+                                                const assigned = getAssignedStudents(c.id);
+                                                return (
+                                                    <TableRow key={c.id} className="group">
+                                                        {(isReadOnly || canAssign) && (
+                                                            <TableCell className="py-2.5">
+                                                                <Checkbox
+                                                                    checked={selectedCaseIds.includes(c.id)}
+                                                                    onCheckedChange={(ch) => {
+                                                                        setSelectedCaseIds(ch ? [...selectedCaseIds, c.id] : selectedCaseIds.filter(id => id !== c.id));
+                                                                    }}
+                                                                />
+                                                            </TableCell>
+                                                        )}
+                                                        <TableCell className="py-2.5">
+                                                            <div className="flex items-start gap-2.5">
+                                                                <FileText className="h-5 w-5 text-primary/40 shrink-0 mt-0.5" />
+                                                                <div className="min-w-0 flex-1">
+                                                                    <div className="font-medium text-sm leading-tight truncate">{c.title}</div>
+                                                                    {c.description && (
+                                                                        <div className="text-[11px] text-muted-foreground truncate">{c.description}</div>
+                                                                    )}
+                                                                    <div className="flex items-center gap-1.5 mt-1">
+                                                                        {c.content.pdfName && (
+                                                                            <Badge variant="outline" className="text-[8px] font-mono px-1 py-0">PDF</Badge>
+                                                                        )}
+                                                                        {c.content.pdfSize && (
+                                                                            <span className="text-[9px] text-muted-foreground whitespace-nowrap">{c.content.pdfSize}</span>
+                                                                        )}
+                                                                        {c.content.pdfUrl && (
+                                                                            <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => viewPdf(c)} title="Ver PDF">
+                                                                                <Eye className="h-3 w-3" />
+                                                                            </Button>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </TableCell>
+                                                        {!(isAdmin && currentTab === 'repository') && (
+                                                            <TableCell className="py-2.5 align-top">
+                                                                {assigned.length > 0 ? (
+                                                                    <div className="space-y-1 max-h-[100px] overflow-y-auto">
+                                                                        {Object.entries(
+                                                                            assigned.reduce((acc: Record<string, typeof assigned>, s) => {
+                                                                                (acc[s.groupId] ??= []).push(s);
+                                                                                return acc;
+                                                                            }, {})
+                                                                        ).map(([gId, students]) => (
+                                                                            <div key={gId}>
+                                                                                <button
+                                                                                    onClick={() => setSelectedGroupId(gId)}
+                                                                                    className="text-[9px] font-bold text-primary uppercase tracking-wider hover:underline flex items-center gap-1"
+                                                                                >
+                                                                                    <Users className="w-2.5 h-2.5" />
+                                                                                    {students[0].groupName}
+                                                                                    <span className="font-normal text-muted-foreground">({students.length})</span>
+                                                                                </button>
+                                                                                <div className="flex flex-wrap gap-0.5 mt-0.5">
+                                                                                    {students.map(s => (
+                                                                                        <Badge key={s.userId} variant="secondary" className="text-[8px] flex items-center gap-0.5 px-1 py-0">
+                                                                                            {s.name}
+                                                                                            {canAssign && (
+                                                                                                <button
+                                                                                                    onClick={() => removeAssignment(c.id, s.userId)}
+                                                                                                    className="hover:text-destructive ml-0.5"
+                                                                                                >
+                                                                                                    <X className="h-2 w-2" />
+                                                                                                </button>
+                                                                                            )}
+                                                                                        </Badge>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                ) : (
+                                                                    <span className="text-xs text-muted-foreground italic">Sin asignaciones</span>
+                                                                )}
+                                                            </TableCell>
+                                                        )}
+                                                        <TableCell className="py-2.5 text-right align-top">
+                                                            <div className="flex gap-0.5 justify-end opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                                                {canRename && (
+                                                                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => openRenameDialog(c)} title="Renombrar">
+                                                                        <Pencil className="h-3.5 w-3.5" />
+                                                                    </Button>
+                                                                )}
+                                                                {canDelete && (
+                                                                    <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive" onClick={() => deleteCase(c.id)} title="Eliminar">
+                                                                        <Trash2 className="h-3.5 w-3.5" />
+                                                                    </Button>
+                                                                )}
+                                                            </div>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                );
+                                            })}
+                                        </TableBody>
+                                    </Table>
+                                </CardContent>
+                            </Card>
+                        )}
                     </div>
                 </div>
 
@@ -814,6 +1009,45 @@ export function ExerciseBank({ isAdmin }: ExerciseBankProps) {
                         </div>
                     </DialogContent>
                 </Dialog>
+
+                {isAdmin && (
+                    <Dialog open={isAdminCopyOpen} onOpenChange={setIsAdminCopyOpen}>
+                        <DialogContent style={{ width: '500px', maxWidth: '95vw' }}>
+                            <DialogHeader><DialogTitle>Copiar {selectedCaseIds.length} caso(s) a Espacio de Docente</DialogTitle></DialogHeader>
+                            <div className="space-y-4">
+                                <p className="text-sm text-muted-foreground">Selecciona el docente y la carpeta destino en su espacio personal.</p>
+                                <div>
+                                    <Label>Docente</Label>
+                                    <Select value={adminCopyTeacherId} onValueChange={(v) => { setAdminCopyTeacherId(v); setAdminCopyFolderId(""); }}>
+                                        <SelectTrigger><SelectValue placeholder="Elige un docente..." /></SelectTrigger>
+                                        <SelectContent>
+                                            {(allUsers || []).filter((u: any) => u.role === 'teacher').map((t: any) => (
+                                                <SelectItem key={t.id} value={t.id}>{t.name || t.fullName || t.email}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div>
+                                    <Label>Carpeta destino (espacio personal del docente)</Label>
+                                    <Select value={adminCopyFolderId} onValueChange={setAdminCopyFolderId} disabled={!adminCopyTeacherId}>
+                                        <SelectTrigger><SelectValue placeholder="Elige una carpeta..." /></SelectTrigger>
+                                        <SelectContent>
+                                            {(allFolders || []).filter(f => {
+                                                const m = extractMeta(f.description);
+                                                return m.ownerId === adminCopyTeacherId && m.space === 'personal';
+                                            }).map(f => (
+                                                <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <Button onClick={adminCopyToTeacher} className="w-full" disabled={!adminCopyTeacherId || !adminCopyFolderId}>
+                                    <Download className="mr-2 h-4 w-4" /> Copiar a Espacio del Docente
+                                </Button>
+                            </div>
+                        </DialogContent>
+                    </Dialog>
+                )}
             </div>
         );
     }

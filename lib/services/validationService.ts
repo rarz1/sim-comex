@@ -4,6 +4,8 @@ import { ValidationReport, ValidationDetail, FieldMatch } from '@/types/validati
 import { Draft } from '@/types';
 import { Module } from '@/types/modules';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export interface CrossDocumentMatch {
     docTitle: string;
     docId: string;
@@ -19,10 +21,20 @@ export const validationService = {
      * Uses 'tagId' if available, otherwise falls back to label for backward compatibility
      */
     async getModuleDataMap(userId: string, moduleId: string, excludeDraftId?: number, groupId?: string): Promise<Record<string, FieldMatch[]>> {
+        if (!UUID_RE.test(moduleId)) {
+            console.warn(`⚠️ getModuleDataMap: moduleId "${moduleId}" is not a valid UUID, skipping`);
+            return {};
+        }
         console.log(`🔍 ValidationService: getting data for Module ${moduleId} User ${userId} Group ${groupId || 'ALL'}`);
 
         // 1. Fetch Module to identify ALL linked documents (Owned + Attached)
-        const module = await dataService.getById<Module>('modules', moduleId);
+        let module: Module | null;
+        try {
+            module = await dataService.getById<Module>('modules', moduleId);
+        } catch (e) {
+            console.warn(`⚠️ getModuleDataMap: could not fetch module ${moduleId}:`, e);
+            return {};
+        }
         if (!module) {
             console.log("❌ Module not found");
             return {};

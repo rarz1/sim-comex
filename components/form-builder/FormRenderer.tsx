@@ -67,11 +67,15 @@ export function FormRenderer({ template, groupId = "default", initialData = {}, 
         if (user && moduleId && value) {
             const field = currentSection.fields.find(f => f.id === fieldId);
             if (field) {
-                const matches = await validationService.evaluateField(field, value, user.id, moduleId);
-                setCrossValidation(prev => ({
-                    ...prev,
-                    [fieldId]: matches
-                }));
+                try {
+                    const matches = await validationService.evaluateField(field, value, user.id, moduleId);
+                    setCrossValidation(prev => ({
+                        ...prev,
+                        [fieldId]: matches
+                    }));
+                } catch (e) {
+                    console.warn("Cross-validation error:", e);
+                }
             }
         }
     };
@@ -174,9 +178,7 @@ export function FormRenderer({ template, groupId = "default", initialData = {}, 
                         onValueChange={(val) => handleInputChange(field.id, val)}
                     >
                         <SelectTrigger id={field.id}>
-                            <SelectValue placeholder="Seleccione...">
-                                {formData[field.id] || undefined}
-                            </SelectValue>
+                            <SelectValue placeholder="Seleccione..." />
                         </SelectTrigger>
                         <SelectContent>
                             {field.catalogId ? (

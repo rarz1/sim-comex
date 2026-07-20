@@ -20,7 +20,9 @@ import {
     Trash2,
     Monitor,
     Sun,
-    Moon
+    Moon,
+    Loader2,
+    AlertCircle
 } from "lucide-react";
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
@@ -29,11 +31,17 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
+import { authService } from "@/lib/services/authService";
+import { toast } from "sonner";
 
 export default function SettingsPage() {
     const { user } = useAuth();
     const { setTheme, theme } = useTheme();
     const [showPassword, setShowPassword] = useState(false);
+    const [currentPassword, setCurrentPassword] = useState("");
+    const [newPassword, setNewPassword] = useState("");
+    const [confirmPassword, setConfirmPassword] = useState("");
+    const [changingPassword, setChangingPassword] = useState(false);
 
     return (
         <div className="max-w-4xl mx-auto space-y-8 pb-20">
@@ -72,40 +80,71 @@ export default function SettingsPage() {
                         </CardHeader>
                         <CardContent className="p-8 space-y-8">
                             <div className="grid gap-6">
+                            <div className="space-y-2">
+                                <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Contraseña Actual</Label>
+                                <div className="relative">
+                                    <Input 
+                                        type={showPassword ? "text" : "password"} 
+                                        className="h-12 rounded-2xl border-muted-foreground/20 focus:border-primary/50 transition-all pl-10 pr-10"
+                                        value={currentPassword}
+                                        onChange={e => setCurrentPassword(e.target.value)}
+                                    />
+                                    <Lock className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground/40" />
+                                    <Button 
+                                        variant="ghost" 
+                                        size="icon" 
+                                        className="absolute right-2 top-1.5 hover:bg-transparent"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                    >
+                                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                    </Button>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="space-y-2">
-                                    <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Contraseña Actual</Label>
-                                    <div className="relative">
-                                        <Input 
-                                            type={showPassword ? "text" : "password"} 
-                                            className="h-12 rounded-2xl border-muted-foreground/20 focus:border-primary/50 transition-all pl-10 pr-10" 
-                                        />
-                                        <Lock className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground/40" />
-                                        <Button 
-                                            variant="ghost" 
-                                            size="icon" 
-                                            className="absolute right-2 top-1.5 hover:bg-transparent"
-                                            onClick={() => setShowPassword(!showPassword)}
-                                        >
-                                            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                                        </Button>
-                                    </div>
+                                    <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Nueva Contraseña</Label>
+                                    <Input type="password" className="h-12 rounded-2xl border-muted-foreground/20"
+                                        value={newPassword}
+                                        onChange={e => setNewPassword(e.target.value)}
+                                    />
                                 </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div className="space-y-2">
-                                        <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Nueva Contraseña</Label>
-                                        <Input type="password" className="h-12 rounded-2xl border-muted-foreground/20" />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Confirmar Contraseña</Label>
-                                        <Input type="password" className="h-12 rounded-2xl border-muted-foreground/20" />
-                                    </div>
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-black uppercase tracking-widest text-muted-foreground">Confirmar Contraseña</Label>
+                                    <Input type="password" className="h-12 rounded-2xl border-muted-foreground/20"
+                                        value={confirmPassword}
+                                        onChange={e => setConfirmPassword(e.target.value)}
+                                    />
                                 </div>
                             </div>
-                            <div className="pt-4 flex justify-end">
-                                <Button className="rounded-2xl font-black uppercase text-[10px] tracking-widest px-10 h-12 shadow-lg shadow-primary/20">
-                                    Actualizar Contraseña
-                                </Button>
-                            </div>
+                        </div>
+                        <div className="pt-4 flex justify-end">
+                            <Button className="rounded-2xl font-black uppercase text-[10px] tracking-widest px-10 h-12 shadow-lg shadow-primary/20"
+                                disabled={changingPassword || !newPassword || !confirmPassword}
+                                onClick={async () => {
+                                    if (newPassword !== confirmPassword) {
+                                        toast.error("Las contraseñas no coinciden");
+                                        return;
+                                    }
+                                    if (newPassword.length < 6) {
+                                        toast.error("La contraseña debe tener al menos 6 caracteres");
+                                        return;
+                                    }
+                                    setChangingPassword(true);
+                                    const result = await authService.changePassword(newPassword);
+                                    setChangingPassword(false);
+                                    if (result.success) {
+                                        toast.success("Contraseña actualizada correctamente");
+                                        setCurrentPassword("");
+                                        setNewPassword("");
+                                        setConfirmPassword("");
+                                    } else {
+                                        toast.error(result.error || "Error al cambiar la contraseña");
+                                    }
+                                }}>
+                                {changingPassword ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                                Actualizar Contraseña
+                            </Button>
+                        </div>
                         </CardContent>
                     </Card>
                 </TabsContent>

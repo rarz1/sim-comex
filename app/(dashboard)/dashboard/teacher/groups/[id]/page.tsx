@@ -194,16 +194,18 @@ export default function TeacherGroupDetailPage({ params }: { params: Promise<{ i
                         <TableBody>
                             {filteredStudents.map((student, idx) => (
                                 <TableRow key={idx}>
-                                    <TableCell className="flex items-center gap-3">
-                                        <Avatar className="h-8 w-8">
-                                            <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${student.id}`} />
-                                            <AvatarFallback>{(student.fullName || '??').substring(0, 2).toUpperCase()}</AvatarFallback>
-                                        </Avatar>
-                                        <div className="flex flex-col">
-                                            <span className="font-medium">{student.fullName || 'Usuario'}</span>
-                                            <span className="text-xs text-muted-foreground flex items-center gap-1">
-                                                <Mail className="w-3 h-3" /> {student.email || 'sin-correo@sim.com'}
-                                            </span>
+                                    <TableCell>
+                                        <div className="flex items-center gap-3">
+                                            <Avatar className="h-8 w-8">
+                                                <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${student.id}`} />
+                                                <AvatarFallback>{(student.name || student.fullName || '??').substring(0, 2).toUpperCase()}</AvatarFallback>
+                                            </Avatar>
+                                            <div>
+                                                <span className="font-medium">{student.name || student.fullName || student.email || 'Usuario'}</span>
+                                                {student.email && (student.name || student.fullName) && (
+                                                    <span className="text-xs text-muted-foreground ml-2">({student.email})</span>
+                                                )}
+                                            </div>
                                         </div>
                                     </TableCell>
                                     <TableCell>
@@ -220,7 +222,7 @@ export default function TeacherGroupDetailPage({ params }: { params: Promise<{ i
                                             </SheetTrigger>
                                             <SheetContent className="w-[400px] sm:w-[540px] overflow-y-auto">
                                                 <SheetHeader className="mb-6">
-                                                    <SheetTitle>Documentos de {student.fullName || 'Usuario'}</SheetTitle>
+                                                    <SheetTitle>Documentos de {student.name || student.fullName || student.email || 'Usuario'}</SheetTitle>
                                                     <SheetDescription>
                                                         Revisa los borradores y entregas asociadas al módulo <strong>{module?.title}</strong>.
                                                     </SheetDescription>
@@ -229,7 +231,7 @@ export default function TeacherGroupDetailPage({ params }: { params: Promise<{ i
                                                 {module ? (
                                                     <TeacherDocumentViewer
                                                         studentId={student.id}
-                                                        studentName={student.fullName || 'Usuario'}
+                                                        studentName={student.name || student.fullName || student.email || 'Usuario'}
                                                         moduleId={module?.id}
                                                         groupId={groupId}
                                                     />
