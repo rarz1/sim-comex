@@ -3,16 +3,22 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const BUCKET = 'cases-pdf';
 
+const BUCKET_CONFIG = {
+    public: true,
+    allowedMimeTypes: ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'],
+    fileSizeLimit: 10485760,
+};
+
 async function ensureBucket() {
     const supabase = createAdminClient();
     const { data: buckets } = await supabase.storage.listBuckets();
-    if (!buckets?.find(b => b.name === BUCKET)) {
-        const { error } = await supabase.storage.createBucket(BUCKET, {
-            public: true,
-            allowedMimeTypes: ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'],
-            fileSizeLimit: 10485760,
-        });
+    const exists = buckets?.find(b => b.name === BUCKET);
+    if (!exists) {
+        const { error } = await supabase.storage.createBucket(BUCKET, BUCKET_CONFIG);
         if (error) console.error('Error creating bucket:', error);
+    } else {
+        const { error } = await supabase.storage.updateBucket(BUCKET, BUCKET_CONFIG);
+        if (error) console.error('Error updating bucket:', error);
     }
 }
 
