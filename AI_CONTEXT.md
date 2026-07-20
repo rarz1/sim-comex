@@ -877,6 +877,25 @@ SIM 1/
   - Archivo: `components/teacher/ExerciseBank.tsx`
 - Build: `tsc --noEmit` + `next build` pasan sin errores.
 
+### Sesión 53 (actual) - Julio 2026
+- **ExerciseBank: Checkbox movido al lado izquierdo** de cada card (opuesto a las acciones).
+- **Reportes grupales: Eliminado auto-close al imprimir** — `window.close()` reemplazado por `window.focus()` en admin y teacher reports. El preview ya no se cierra al cancelar la impresión.
+- **Contadores + filtros en cada tab admin**:
+  - Módulos: contador `X módulos` + búsqueda + filtro por estado (pub/draft) + filtro por docente
+  - Documentos: contador `X plantillas` + búsqueda + filtro por estado
+  - Grupos: contador `X grupos` + filtro por módulo + filtro por docente
+  - Usuarios: contador `X usuarios (est. · doc. · adm.)` + búsqueda + filtro por rol + filtro por módulo
+  - Catálogos: contador `X catálogos` + filtro por tipo
+- **ExerciseBank: Vista de detalle de carpeta cambiada de grilla de cards a tabla**:
+  - 3 columnas fijas: Caso (30%), Estudiantes Asignados (55%), Acciones (15%)
+  - Info del PDF (badge, tamaño, ojito) inline dentro del caso
+  - Estudiantes agrupados por grupo, con nombre del grupo y badges por estudiante
+  - `table-fixed` con `overflow-x-auto` para evitar scroll horizontal
+- **Commit y push a main** (`ffd037f`): 18 archivos, +1624/-376 líneas. Vercel hace deploy automático.
+- Build: `tsc --noEmit` + `next build` pasan sin errores.
+- Errores: Ninguno.
+- Pendientes: N/A.
+
 ### Sesión 52 - Julio 2026
 - **ExerciseBank: Lista de casos como tarjetas en grilla**:
   - Reemplazada la lista vertical (`space-y-2`) por grilla responsiva `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3` en la vista detalle de carpeta.
